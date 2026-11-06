@@ -1,0 +1,6 @@
+nicegui
+fastapi
+starlette
+boto3
+bcrypt
+python-dotenv
