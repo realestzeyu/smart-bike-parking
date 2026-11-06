@@ -1,0 +1,36 @@
+# Secrets
+.env
+*.pem
+*.key
+*.crt
+certs/*
+!certs/.gitkeep
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# NiceGUI user session storage
+.nicegui/
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Local virtualenvs
+my_env/
+.venv/
+venv/
