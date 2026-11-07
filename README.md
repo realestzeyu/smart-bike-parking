@@ -10,7 +10,7 @@ ESP32 (sensors + solenoid lock) ⇄ AWS IoT Core (MQTT) → Lambdas → DynamoDB
 |---|---|
 | `webapp/` | NiceGUI app: cyclist, public and officer pages |
 | `lambdas/` | `handle_event`, `check_overstay` (Python) |
-| `infra/` | Terraform (`ap-southeast-1?`) |
+| `infra/` | Terraform for the whole AWS backend (`ap-southeast-1`). Setup guide: [`infra/README.md`](infra/README.md) |
 | `simulator/` | Fake ESP32 for testing without hardware |
 | `firmware/` | ESP32 code |
 | `certs/` | Device certificates (gitignored) |

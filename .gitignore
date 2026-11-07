@@ -14,6 +14,8 @@ certs/*
 !*.tfvars.example
 crash.log
 *.zip
+infra/build/
+tfplan
 
 # Python
 __pycache__/

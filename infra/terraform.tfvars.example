@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored: never commit it.
+
+aws_profile  = "sbp-admin"
+budget_email = "you@example.com"
+
+# Leave empty until the Telegram bot exists.
+telegram_bot_token = ""
+
+# Demo values. Deployment: 4320 (3 days) and rate(15 minutes).
+overstay_limit_minutes  = 2
+overstay_check_schedule = "rate(1 minute)"
+
+spaces = ["space1"]
