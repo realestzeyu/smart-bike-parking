@@ -18,9 +18,9 @@ School IoT + cloud project (PoC). Smart locks fitted to existing bicycle racks a
 See `docs/agreed-names-and-formats.md`. **Both halves depend on it.** Don't invent or rename fields; if something needs to change, update that file first and tell the other side.
 
 ## Repo layout
-- `infra/` Terraform (teammate)
-- `lambdas/handle_event/`, `lambdas/check_overstay/` Lambda code (teammate)
-- `webapp/` NiceGUI app (see `webapp/CLAUDE.md`)
+- `infra/` Terraform (user, since 7 Nov)
+- `lambdas/handle_event/`, `lambdas/check_overstay/` Lambda code (user, since 7 Nov)
+- `webapp/` NiceGUI app (teammate; see `webapp/CLAUDE.md`)
 - `simulator/` fake ESP32 script for testing without hardware
 - `firmware/` ESP32 code (later)
 - `certs/` device certificates (gitignored)

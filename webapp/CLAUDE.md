@@ -38,7 +38,7 @@ All AWS access goes through `backend/`. **Pages never import boto3.** `BACKEND=f
 
 Suggested interface (adjust as needed, keep both versions in sync):
 - Users: `get_user`, `create_user`, `set_telegram_chat_id`
-- Lots: `get_lot`, `list_lots(space_id)`, `claim_lot` (conditional free → taken + session + freeLots), `undo_claim`, `mark_releasing` (+ close session)
+- Lots: `get_lot`, `list_lots(space_id)`, `claim_lot` (conditional free → taken + session), `undo_claim`, `mark_releasing` (+ close session)
 - Commands: `publish_open(lot_id) -> request_id`, `wait_for_opened(lot_id, request_id, timeout)`
 - Read-only: `list_spaces`, `list_open_sessions`, `list_tamper_events(space_id)`
 

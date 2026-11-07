@@ -24,7 +24,7 @@ Assessment: 10 min presentation + 5 min Q&A. Rubric: Innovation, Relevance (IoT 
 
 ## 3. Team, repo and status
 
-**Split:** user = web app (`webapp/`). Teammate = Terraform (`infra/`) + Lambdas (`lambdas/`). Simulator and firmware: TBD.
+**Split (changed 7 Nov):** user = AWS side: Terraform (`infra/`) + Lambdas (`lambdas/`). Teammate = web app (`webapp/`). Simulator and firmware: TBD.
 
 **Repo:** one private GitHub repo `smart-bike-parking`:
 ```
@@ -160,7 +160,8 @@ Scan any QR → sign up → Connect Telegram.
 | Filtering | Edge (state changes only) | Raw readings | Saves data, messages, Lambda calls, DB writes |
 | API layer | None | API Gateway | Web app uses boto3 server-side |
 | Unlock confirmation | `handle_event` writes `opened` to locks table; web app polls | Web app subscribes to MQTT | boto3 can only publish; no extra connection needed |
-| Free-lot count | Atomic counter updated at the two status changes | Recount on every read | One read per space for the public page; scales |
+| Free-lot count (changed 7 Nov) | Count `free` lots from one `Query(spaceId)` on `sbp-locks` | Atomic `freeLots` counter | Same single query also gives per-lot availability; no counter to drift on undo. At scale: add a sparse index on `status` |
+| Session history | Keep every session (`sbp-sessions`) | Track only the current parking on the lock | Authority views usage patterns per lot, durations, suspected abandoned bikes |
 | Alerts sent from | The detecting Lambda | DynamoDB Streams | Fewer parts |
 | Dashboard updates | Polling | WebSockets | Far fewer parts |
 | Database | DynamoDB | RDS; Aurora Serverless v2 | Key lookups, nothing billed idle; no cold-start delay |
@@ -181,23 +182,28 @@ Still needed: cost per lot / space / bike space vs S$9,400; monthly AWS estimate
 
 ## 11. Diagram fix list (only when asked)
 
-- Gateway box → "ESP32: reads sensors, edge filtering, opens locks on command".
-- Lot unit → QR sticker, IR, SW-420, 3 V solenoid + relay (AA).
-- MQTT arrow → "MQTT over TLS (Wi-Fi; 4G router in deployment)", events ↑ / commands ↓.
-- Cyclist → lot "Scans QR" → Cyclist ↔ Web app (NiceGUI) "scan QR, log in, Use / Unlock".
-- **Add Web app → IoT Core "open command"** (biggest gap; also Force unlock).
-- Merge the two EC2 boxes into one NiceGUI web app (cyclist + public + officer); arrows to Cyclist and Officer. Label "laptop for demo, EC2 in deployment".
-- Web app ↔ DynamoDB "read/write".
-- Telegram → Cyclist "tamper, overstay alerts". No Telegram → Officer.
-- Events Lambda → Telegram "tamper alert"; add overstay Lambda → Telegram.
-- Optional: Cyclist → Telegram "connect once"; Web app → Telegram "getUpdates".
+Reviewed against the slide "Architecture and data flow" on 7 Nov.
+
+**Already done on the slide:** cyclist "Scans QR" → lot; web app → IoT Core "Lock/Unlock" (open command); websites ↔ DynamoDB; Telegram → Cyclist "push alerts" (no Telegram → Officer); IoT Rule `spaceX/lotX/event` → events Lambda; "AI say..." note removed.
+
+**Still to fix:**
+- EventBridge "daily cron job" → "every 1 min (demo) / 15 min (deployment)". Daily would leave an abandoned bike unflagged for up to a day.
+- Gateway box "MCU (ESP/Pi)" → "ESP32: reads sensors, sends state changes only, opens locks on command" (Pi was rejected).
+- "one per parking bay" → "one per **parking space**" (agreed naming).
+- MQTT arrow → "MQTT over TLS, X.509 cert (Wi-Fi / hotspot; 4G router in deployment)", events ↑ / commands ↓.
+- Add **overstay Lambda → Telegram** (only the events Lambda is connected, but the label says "tamper, overstay").
+- DynamoDB box → "locks, sessions (usage history), users, spaces, tamper-events".
+- **Two EC2 boxes (Public / Government Website):** recommended merge into one "Web app (NiceGUI): cyclist / public / officer pages. Laptop for demo, EC2 in deployment", with arrows to Cyclist and Officer and one Lock/Unlock arrow to IoT Core. Terraform creates no EC2. If kept as two, add Government Website → IoT Core "Force unlock".
+- "Lot units 2–10" → "Lot units 2–N". Each lot needs 3 GPIO (IR, SW-420, relay); one ESP32 realistically handles ~6–8 lots.
+- Lot unit → "QR sticker, IR, SW-420, 3 V solenoid + relay (2× AA)".
+
+**Optional:**
+- Website → Telegram "getUpdates (connect once)"; Cyclist → Telegram "connect once".
+- Small "Terraform" note on the AWS box.
+- Colour-coded flows with a legend.
 - Rule 2 + `handle_offline`: leave out unless decided.
-- EventBridge "daily cron job" → "every 15 min".
-- DynamoDB box → locks, sessions, users, spaces, tamper-events.
-- Optional: small "Terraform" note on the AWS box.
-- Delete the blue "AI say..." note.
-- Optional: colour-coded flows with a legend.
-- Sequence page: redraw from section 6.
+
+**Sequence page:** still the old NFC flow; redraw from section 6.
 
 ## 12. Q&A answers prepared
 
