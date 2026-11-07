@@ -4,7 +4,7 @@ This folder builds the whole AWS side of Smart Bicycle Parking with one command:
 
 You can deploy your own copy into any AWS account by following this guide from top to bottom. It takes about 15 minutes the first time.
 
-Table names, fields, topics and payloads are defined in [`../docs/agreed-names-and-formats.md`](../docs/agreed-names-and-formats.md). Change that file first if you need a schema change.
+Tables, fields, topics and payloads are defined in [`../docs/agreed-names-and-formats.md`](../docs/agreed-names-and-formats.md) (includes the schema diagram). Change that file first if you need a schema change.
 
 ---
 
@@ -12,16 +12,16 @@ Table names, fields, topics and payloads are defined in [`../docs/agreed-names-a
 
 | File | Creates |
 |---|---|
-| `dynamodb.tf` | 5 tables: `sbp-locks`, `sbp-sessions` (+ `open-sessions` index), `sbp-users`, `sbp-spaces`, `sbp-tamper-events`. On-demand billing |
+| `dynamodb.tf` | 5 on-demand tables: `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions` (+ `by-lot` index for usage history), `sbp-tamper-events` |
 | `iot.tf` | For each parking space: an IoT thing (`space1`), its certificate (saved to `../certs/space1/`) and device policy. Plus a rule that sends every `<space>/<lot>/event` message to `handle_event` |
 | `lambdas.tf` | `sbp-handle-event` and `sbp-check-overstay` (Python 3.13), zipped from `../lambdas/`, each with its own least-privilege role and 7-day logs |
-| `scheduler.tf` | EventBridge Scheduler that runs `check_overstay` every minute |
+| `scheduler.tf` | EventBridge Scheduler that runs `check_overstay` (every minute for the demo; can be switched off) |
 | `webapp_iam.tf` | IAM user `sbp-webapp`: DynamoDB on the 5 tables + `iot:Publish` on `space*/*/cmd` only |
 | `budget.tf` | Monthly budget `sbp-monthly`: emails you at 80% of US$5 spent, or if the month is forecast to go over |
 | `outputs.tf` | Values you need afterwards (IoT endpoint, table names, web app key) |
 | `variables.tf` | Settings you can change (see [Settings](#settings)) |
 
-No API Gateway, no EC2, nothing that bills by the hour. The web app runs on a laptop for the demo.
+No API Gateway, no EC2, no database server: nothing that bills by the hour. The web app runs on a laptop for the demo.
 
 ---
 
@@ -98,6 +98,7 @@ Edit `terraform.tfvars`:
 aws_profile        = "sbp-admin"
 budget_email       = "you@example.com"   # gets the cost alerts
 telegram_bot_token = ""                  # leave empty until the bot exists
+overstay_check_enabled = true            # set false to pause the overstay check
 ```
 `terraform.tfvars` is gitignored. Never commit it.
 
@@ -119,7 +120,7 @@ Afterwards, `terraform output` prints the IoT endpoint, table names and Lambda n
 
 ## 5. Check it works
 
-**a) Tables, Lambdas, rule, schedule exist**
+**a) Tables, Lambdas, schedule exist**
 ```bash
 P="--profile sbp-admin"
 aws dynamodb list-tables $P --query "TableNames[?starts_with(@,'sbp-')]"
@@ -127,6 +128,7 @@ aws lambda list-functions $P --query "Functions[?starts_with(FunctionName,'sbp-'
 aws scheduler get-schedule --name sbp-check-overstay $P --query State
 ls ../certs/space1/        # certificate.pem.crt, private.pem.key
 ```
+Expect the 5 `sbp-` tables, both Lambdas, `ENABLED`.
 
 **b) A device event reaches `handle_event`**
 ```bash
@@ -143,7 +145,7 @@ Expect a log line `{"type": "bike_arrived", "space": "space1", "lot": "lot1"}`.
 ```bash
 aws logs tail /aws/lambda/sbp-check-overstay --since 5m $P
 ```
-Expect `check_overstay ran, limit=2 min`.
+Expect `check_overstay ran, limit=2 min` once a minute.
 
 **d) The web app key is limited correctly**
 ```bash
@@ -157,6 +159,8 @@ aws iot-data publish --topic space1/lot1/cmd --cli-binary-format raw-in-base64-o
 # Denied (expect ForbiddenException):
 aws iot-data publish --topic space1/lot1/event --cli-binary-format raw-in-base64-out \
   --payload '{"type":"tamper"}' --endpoint-url "https://$EP" --profile sbp-webapp
+# Allowed: read a table
+aws dynamodb scan --table-name sbp-lots --select COUNT --profile sbp-webapp
 ```
 A brand-new key can take ~10 s to start working.
 
@@ -190,7 +194,9 @@ Send the web app key (`terraform output -raw webapp_access_key_id` / `webapp_sec
 | Change Lambda code | Edit `../lambdas/<name>/handler.py`, then `terraform plan -out=tfplan && terraform apply tfplan` (it re-zips automatically) |
 | Add a parking space | Add it to `spaces` in `terraform.tfvars`, e.g. `["space1", "space2"]`, then plan + apply. New cert appears in `../certs/space2/` |
 | Add the Telegram bot | Put the token in `telegram_bot_token`, then plan + apply |
+| Pause the overstay check | `overstay_check_enabled = false`, plan + apply |
 | Switch to deployment timings | `overstay_limit_minutes = 4320` (3 days), `overstay_check_schedule = "rate(15 minutes)"` |
+| View / edit data by hand | Console → **DynamoDB → Explore items** → pick a table |
 | See Lambda logs | `aws logs tail /aws/lambda/sbp-handle-event --follow --profile sbp-admin` |
 
 Always read the plan before applying. Anything marked **destroy** or **must be replaced** on a table deletes its data.
@@ -205,6 +211,7 @@ Always read the plan before applying. Anything marked **destroy** or **must be r
 | `budget_email` | (required) | Gets the budget alerts |
 | `budget_limit_usd` | `5` | Monthly budget |
 | `telegram_bot_token` | `""` | Lambdas skip alerts while empty |
+| `overstay_check_enabled` | `true` | Turns the overstay schedule on/off |
 | `overstay_limit_minutes` | `2` | Session age that counts as overstay / suspected abandoned |
 | `overstay_check_schedule` | `rate(1 minute)` | How often `check_overstay` runs |
 
@@ -212,14 +219,16 @@ Always read the plan before applying. Anything marked **destroy** or **must be r
 
 ## Cost
 
-Expected: **close to US$0/month** for the prototype. Lambda, EventBridge Scheduler, DynamoDB on-demand, CloudWatch Logs and IoT Core are all billed per use, and our usage (one device, a check every minute) sits inside or near the free allowances. IAM and the budget are free. The budget email is the safety net.
+Expected: **close to US$0/month** for the prototype, idle or in use. Everything is billed per use: DynamoDB on-demand (storage free up to 25 GB, fractions of a cent per thousand requests), Lambda and EventBridge Scheduler (inside the permanent free allowances even with a check every minute), IoT Core (cents), CloudWatch Logs (free up to 5 GB). IAM and the budget are free. The budget email is the safety net.
+
+What *could* cost money: firmware sending raw sensor readings instead of state changes (~US$25–30/month per lot in IoT messages), or hosting the web app on EC2 (~US$10–15/month).
 
 ## Tear down
 
 ```bash
 terraform destroy
 ```
-Removes everything, **including all table data**. The next `apply` creates a **new device certificate**, so the ESP32 must be re-flashed. Only destroy when you are finished.
+Removes everything, **including all table data**. The next `apply` creates a **new device certificate** (re-flash the ESP32) and a **new web app key** (redo step 5d, re-share it). Only destroy when you are finished.
 
 ## Never commit
 

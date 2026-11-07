@@ -5,11 +5,11 @@ locals {
     handle_event = {
       timeout = 10
       env     = {}
-      # Updates locks, logs tamper, reads the owner's telegramChatId. Never touches spaces.
+      # Updates the lot (status, bike_present), logs tamper/theft, reads the owner's telegram_chat_id.
       statements = [
         {
           actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
-          resources = [aws_dynamodb_table.locks.arn]
+          resources = [aws_dynamodb_table.lots.arn]
         },
         {
           actions   = ["dynamodb:PutItem"]
@@ -24,14 +24,14 @@ locals {
     check_overstay = {
       timeout = 30
       env     = { OVERSTAY_LIMIT_MINUTES = tostring(var.overstay_limit_minutes) }
-      # Reads open sessions, sets overstayNotifiedAt, reads the owner's telegramChatId.
+      # Scans lots for taken ones, reads/flags their current session, reads the owner's telegram_chat_id.
       statements = [
         {
-          actions   = ["dynamodb:Query"]
-          resources = ["${aws_dynamodb_table.sessions.arn}/index/open-sessions"]
+          actions   = ["dynamodb:Scan"]
+          resources = [aws_dynamodb_table.lots.arn]
         },
         {
-          actions   = ["dynamodb:UpdateItem"]
+          actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
           resources = [aws_dynamodb_table.sessions.arn]
         },
         {

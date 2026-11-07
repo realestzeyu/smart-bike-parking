@@ -1,105 +1,100 @@
-# The 5 tables from docs/agreed-names-and-formats.md section 2. On-demand billing.
-# Only key attributes are declared here; other fields are schemaless.
-# Seed items are on hold until the schema is settled.
+# The 5 tables from docs/agreed-names-and-formats.md section 2 (team ER diagram as key-value tables).
+# On-demand billing: nothing charged while idle. Only key attributes are declared; others are schemaless.
 
-# Keyed by space so one Query(spaceId) lists every lot in a space (availability + free count).
-resource "aws_dynamodb_table" "locks" {
-  name         = "${local.prefix}-locks"
+# One item per parking space. Few items: the web app Scans.
+resource "aws_dynamodb_table" "spaces" {
+  name         = "${local.prefix}-spaces"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "spaceId"
-  range_key    = "lotId"
+  hash_key     = "id"
 
   attribute {
-    name = "spaceId"
-    type = "S"
-  }
-  attribute {
-    name = "lotId"
+    name = "id"
     type = "S"
   }
 }
 
-# Usage archive: Query(lotId) = a lot's parking history.
+# One item per lot, keyed by space so one Query(space_id) lists a space's lots.
+resource "aws_dynamodb_table" "lots" {
+  name         = "${local.prefix}-lots"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "space_id"
+  range_key    = "id"
+
+  attribute {
+    name = "space_id"
+    type = "S"
+  }
+  attribute {
+    name = "id"
+    type = "S"
+  }
+}
+
+# One item per account. id = the login username.
+resource "aws_dynamodb_table" "users" {
+  name         = "${local.prefix}-users"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+}
+
+# One item per parking session (usage archive). Key: id (UUID).
+# The current session of a lot is lot.session_id; history per lot uses the by-lot index.
 resource "aws_dynamodb_table" "sessions" {
   name         = "${local.prefix}-sessions"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "lotId"
-  range_key    = "startTime"
+  hash_key     = "id"
 
   attribute {
-    name = "lotId"
+    name = "id"
     type = "S"
   }
   attribute {
-    name = "startTime"
+    name = "lot_id"
     type = "S"
   }
   attribute {
-    name = "open"
+    name = "start_time"
     type = "S"
   }
 
-  # Sparse: only open sessions have the "open" attribute, so only they appear here.
+  # Query(lot_id) = a lot's usage history, newest first with ScanIndexForward=false.
   global_secondary_index {
-    name            = "open-sessions"
+    name            = "by-lot"
     projection_type = "ALL"
-
     key_schema {
-      attribute_name = "open"
+      attribute_name = "lot_id"
       key_type       = "HASH"
     }
     key_schema {
-      attribute_name = "startTime"
+      attribute_name = "start_time"
       key_type       = "RANGE"
     }
   }
 }
 
-resource "aws_dynamodb_table" "users" {
-  name         = "${local.prefix}-users"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "username"
-
-  attribute {
-    name = "username"
-    type = "S"
-  }
-}
-
-# One item per space: name, lat, lng (cyclist "nearest spaces").
-resource "aws_dynamodb_table" "spaces" {
-  name         = "${local.prefix}-spaces"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "spaceId"
-
-  attribute {
-    name = "spaceId"
-    type = "S"
-  }
-}
-
+# Tamper log. Key: id (UUID). Each event belongs to a session (session_id).
 resource "aws_dynamodb_table" "tamper_events" {
   name         = "${local.prefix}-tamper-events"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "lotId"
-  range_key    = "at"
+  hash_key     = "id"
 
   attribute {
-    name = "lotId"
-    type = "S"
-  }
-  attribute {
-    name = "at"
+    name = "id"
     type = "S"
   }
 }
 
 locals {
   tables = {
-    locks         = aws_dynamodb_table.locks
-    sessions      = aws_dynamodb_table.sessions
-    users         = aws_dynamodb_table.users
     spaces        = aws_dynamodb_table.spaces
+    lots          = aws_dynamodb_table.lots
+    users         = aws_dynamodb_table.users
+    sessions      = aws_dynamodb_table.sessions
     tamper_events = aws_dynamodb_table.tamper_events
   }
 }

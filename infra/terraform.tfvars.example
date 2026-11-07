@@ -6,7 +6,9 @@ budget_email = "you@example.com"
 # Leave empty until the Telegram bot exists.
 telegram_bot_token = ""
 
-# Demo values. Deployment: 4320 (3 days) and rate(15 minutes).
+# Overstay (suspected abandoned) check. Demo values.
+# Deployment: 4320 (3 days) and rate(15 minutes).
+overstay_check_enabled  = true
 overstay_limit_minutes  = 2
 overstay_check_schedule = "rate(1 minute)"
 

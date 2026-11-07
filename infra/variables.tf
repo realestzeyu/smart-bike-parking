@@ -30,9 +30,15 @@ variable "overstay_limit_minutes" {
 }
 
 variable "overstay_check_schedule" {
-  description = "How often check_overstay runs. Demo: rate(1 minute). Deployment: rate(15 minutes)."
+  description = "How often check_overstay runs when enabled. Demo: rate(1 minute). Deployment: rate(15 minutes)."
   type        = string
   default     = "rate(1 minute)"
+}
+
+variable "overstay_check_enabled" {
+  description = "Turn the overstay schedule on/off."
+  type        = bool
+  default     = true
 }
 
 variable "budget_email" {

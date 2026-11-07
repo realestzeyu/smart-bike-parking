@@ -33,9 +33,11 @@ resource "aws_iam_role_policy" "scheduler" {
   })
 }
 
+# Can be switched off with overstay_check_enabled = false (e.g. when nobody is testing).
 resource "aws_scheduler_schedule" "check_overstay" {
   name                = "${local.prefix}-check-overstay"
   schedule_expression = var.overstay_check_schedule
+  state               = var.overstay_check_enabled ? "ENABLED" : "DISABLED"
 
   flexible_time_window {
     mode = "OFF"

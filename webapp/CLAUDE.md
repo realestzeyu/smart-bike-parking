@@ -2,6 +2,8 @@
 
 One NiceGUI app with three parts: **cyclist** pages (opened by the QR on each lot), a **public** page (free lots per space), and an **officer** dashboard. It reads/writes DynamoDB and publishes `open` commands to IoT Core with `boto3`. No API Gateway.
 
+> **7 Nov 2026: schema proposal updated** (still DynamoDB). Tables are now `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions`, `sbp-tamper-events` with `snake_case` fields; there is **no `opened` confirmation** any more (unlock is confirmed by IR `bike_left`; claim has Retry / Cancel). Notes further down may still use the old names; `../docs/agreed-names-and-formats.md` is the source of truth.
+
 Table names, fields, status rules, payloads and settings: **`../docs/agreed-names-and-formats.md`**. Follow it exactly; don't add fields without updating it.
 
 ## Pages (routes)

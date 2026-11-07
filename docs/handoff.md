@@ -159,12 +159,12 @@ Scan any QR → sign up → Connect Telegram.
 | Microswitch | Not used | Latch switch | Simpler; IR confirms bike |
 | Filtering | Edge (state changes only) | Raw readings | Saves data, messages, Lambda calls, DB writes |
 | API layer | None | API Gateway | Web app uses boto3 server-side |
-| Unlock confirmation | `handle_event` writes `opened` to locks table; web app polls | Web app subscribes to MQTT | boto3 can only publish; no extra connection needed |
+| Unlock confirmation (changed 7 Nov) | IR `bike_left` confirms the unlock (lot stays `releasing` until then, owner can resend); claim has Retry / Cancel | ESP32 echoes `requestId` in an `opened` event; web app subscribes to MQTT | Uses the sensor we already have; no extra field or message; boto3 can only publish |
 | Free-lot count (changed 7 Nov) | Count `free` lots from one `Query(spaceId)` on `sbp-locks` | Atomic `freeLots` counter | Same single query also gives per-lot availability; no counter to drift on undo. At scale: add a sparse index on `status` |
 | Session history | Keep every session (`sbp-sessions`) | Track only the current parking on the lock | Authority views usage patterns per lot, durations, suspected abandoned bikes |
 | Alerts sent from | The detecting Lambda | DynamoDB Streams | Fewer parts |
 | Dashboard updates | Polling | WebSockets | Far fewer parts |
-| Database | DynamoDB | RDS; Aurora Serverless v2 | Key lookups, nothing billed idle; no cold-start delay |
+| Database (revisited 7 Nov) | DynamoDB, on-demand; ER diagram entities mapped to key-value tables | Aurora Serverless v2 PostgreSQL (tried 7 Nov) | Cost: ~US$0 idle vs ~US$0.50/month idle and billed per hour awake (~US$70/month with a 1-min overstay check); no ~15 s cold start; data is small key lookups |
 | Overstay trigger | EventBridge Scheduler | On-device; DynamoDB TTL | Abandoned bikes send no events; TTL can be hours late |
 | Camera | None | ESP32-CAM | Exact timestamp; authorities use existing CCTV |
 
@@ -216,7 +216,7 @@ Reviewed against the slide "Architecture and data flow" on 7 Nov.
 - **Can a thief cut the cable / shake the lock?** SW-420 → tamper alert with exact time for CCTV; logged for officers.
 - **Doesn't the sensor flood the cloud?** Edge filtering: only state changes.
 - **Where's your API layer?** None needed: web app talks to AWS server-side; Lambdas are triggered by IoT Rules and EventBridge.
-- **How do you know the lock actually opened?** The ESP32 replies with the command's ID; the web app waits for it and undoes the booking if it never comes.
+- **How do you know the lock actually opened?** On unlock, the IR sensor reports the bike leaving; until then the lot stays "releasing" and the owner can retry, and after ~2 min staff are called. When locking, the cyclist sees the cable come free and can retry or cancel.
 - **What if two people grab the same lot?** Conditional database write; only one wins.
 - **How does it scale?** Serverless pieces scale with lots; one summary item per space; a new space is a Terraform change.
 - **How would you deploy it?** Terraform rebuilds the whole backend in minutes; web app moves to EC2.
