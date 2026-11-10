@@ -8,6 +8,10 @@ What the web app side and the AWS side have agreed on: tables and fields, who wr
 - **`session.is_open`** (`"Y"` while open, **removed** on close) + sparse GSI **`open-sessions`** (`is_open` + `start_time`): open sessions / abandoned bikes without scanning the whole table. `check_overstay` now queries this index.
 - **GSI `by-user`** on sessions (`user_id` + `start_time`): "my parking history".
 - **`notified_overstay` → `overstay_notified_at`** (still a datetime; name now says what it holds).
+- **`lot.bike_present_since`** (datetime): when IR last saw a bike arrive; removed on `bike_left`. Lets the officer view flag **bikes parked without using the system**.
+- **Officer view derived flags** (computed when the page loads, nothing stored): *stuck releasing* and *unregistered bike* (section 3).
+- **Lambdas write conditionally** on the status they read (no false theft alerts from a race with Unlock) and log **one JSON line per event** for measured results (section 5).
+- Lambda logic diagrams: **`docs/cloud-logic.md`**.
 - **Login moves to Amazon Cognito.** `user.password` is **removed**: Cognito stores the password; `sbp-users` keeps the profile, `role` and `telegram_chat_id`. Cognito username = `user.id`. Self-service **forgot password** by emailed code for both roles. See "Login (Cognito)" in section 2.
 
 **What changed on 10 Nov 2026:**
@@ -65,6 +69,7 @@ erDiagram
         string id PK "sort key: space1#lot1"
         string status "free | taken | releasing"
         boolean bike_present "from IR events"
+        datetime bike_present_since "set on bike_arrived, removed on bike_left"
         string user_id FK "current owner; removed when free"
         string session_id FK "current session; removed when free"
     }
@@ -113,6 +118,7 @@ Key: `space_id` (S, partition) + `id` (S, sort). `Query(space_id)` = every lot i
 | `space_id`, `id` | S | key | starting-data script |
 | `status` | S | `free` / `taken` / `releasing` (section 3) | web app, `handle_event` |
 | `bike_present` | BOOL | from IR `bike_arrived` / `bike_left` | `handle_event` |
+| `bike_present_since` | datetime | when the current bike arrived (IR); **removed** on `bike_left` | `handle_event` |
 | `user_id` | S | current owner; **removed** when free | web app, `handle_event` (removes) |
 | `session_id` | S | `id` of the current session; **removed** when free | web app, `handle_event` (removes) |
 
@@ -220,9 +226,23 @@ The ESP32 only reports IR state changes; it **never** locks or decides anything 
 5. No `bike_left` within ~2 min → "Lock didn't respond, please contact staff" (officer Force unlock / manual release).
 
 ### Other IR / sensor rules
-- `bike_arrived` / `bike_left` always set `bike_present`.
+- `bike_arrived` → `bike_present = true`, `bike_present_since = now` (kept if already set). `bike_left` → `bike_present = false`, remove `bike_present_since`.
 - `bike_left` while `taken` (bike gone without an unlock) → **suspected theft**: tamper event on that lot + session, Telegram to the owner (recorded the same way as a tamper; see section 7).
-- Lot page can show "bike detected" from `bike_present`; officer view can flag `bike_present = true` on a `free` lot (bike parked without using the system).
+- Tamper while `releasing` → stored, **no alert** (the owner is unlocking).
+- IR flicker (brief `bike_left` then `bike_arrived`) is handled by the **ESP32's debounce**, not the cloud.
+
+### Web app rules that protect the flow
+- **Claim only when `bike_present = true`** (nobody can claim an empty lot remotely).
+- The web app never sets a lot to `free` from `releasing`; only `bike_left` does.
+
+### Officer view: derived flags (computed when the page loads; nothing stored)
+| Flag | Rule | Why |
+|---|---|---|
+| **Suspected abandoned** | session has `overstay_notified_at` (set by `check_overstay`) | owner parked too long |
+| **Stuck releasing** | lot `status = releasing` and its session's `end_time` older than `RELEASE_TIMEOUT_MINUTES` (demo `2`) | unlock sent but the bike never left: lock may have failed, or the bike was left behind after the session closed |
+| **Unregistered bike** | lot `status = free`, `bike_present = true`, `bike_present_since` older than `UNREGISTERED_LIMIT_MINUTES` (demo `2`, deployment e.g. `1440`) | bike parked without using the system (the classic abandoned bike) |
+
+Thresholds are web app settings (`.env`).
 
 ---
 
@@ -236,7 +256,7 @@ The ESP32 only reports IR state changes; it **never** locks or decides anything 
 
 - `expires` = now + 30 s. The ESP32 ignores expired commands (needs NTP time; if no NTP, it skips the check).
 - `requestId` is kept for logging/debugging only (no `opened` reply needed).
-- Events may include an optional `"ts"`; the Lambda ignores it and uses its own time.
+- Events may include an optional `"ts"` (epoch ms, NTP time). The Lambda's own time is still the official time; `ts` is only used to measure latency in logs.
 
 **IoT Rule:** `SELECT *, topic(1) AS space, topic(2) AS lot FROM '+/+/event'` → `handle_event`.
 `handle_event` builds the lot key as `space_id = space`, `id = space + "#" + lot`.
@@ -247,13 +267,24 @@ The ESP32 only reports IR state changes; it **never** locks or decides anything 
 
 ## 5. What each Lambda does
 
+Diagrams: **`docs/cloud-logic.md`**.
+
 **`handle_event`**
-- `bike_arrived` → `bike_present = true`.
-- `bike_left` → `bike_present = false`; if `releasing` → `free` (section 3); if `taken` → tamper event (`lot_id`, `session_id = lot.session_id`) + Telegram.
-- `tamper` → always write a tamper event with `lot_id`. If the lot has a `session_id`: also store it, Telegram to the owner (`lot.user_id`) if they have `telegram_chat_id`, set `notified`. Lot free (no session): event stored without `session_id`, no Telegram (`notified = false`).
+- `bike_arrived` → `bike_present = true`, `bike_present_since = now` (if not set).
+- `bike_left` → `bike_present = false`, remove `bike_present_since`; then by status: `releasing` → `free` (remove `user_id`, `session_id`); `taken` → tamper event (`lot_id`, `session_id`) + Telegram (suspected theft); `free` → nothing more.
+- `tamper` → always write a tamper event with `lot_id`. `taken`: add `session_id`, Telegram to the owner (`lot.user_id`) if they have `telegram_chat_id`, set `notified`. `releasing`: add `session_id`, no alert. `free`: no `session_id`, no alert. (`notified = false` when no alert sent.)
+- Unknown lot or bad payload → log and ignore (writes use `attribute_exists`, so a wrong topic never creates a lot).
+- **Conditional writes:** each lot update includes `status = <status just read>`. If it fails (the web app changed the lot meanwhile), re-read and decide again (max 3 tries).
+- Telegram failure never blocks the DB write. DynamoDB errors raise → Lambda retries (up to 2); writes are safe to repeat (worst case: a duplicate tamper row).
 
 **`check_overstay`** (EventBridge Scheduler; demo every 1 min, deployment every 15 min)
-- Query `open-sessions` (`is_open = "Y"`, `start_time` < now − `OVERSTAY_LIMIT_MINUTES`). For each session without `overstay_notified_at`: Telegram to the owner, set `overstay_notified_at`.
+- Query `open-sessions` (`is_open = "Y"`, `start_time` < now − `OVERSTAY_LIMIT_MINUTES`, all pages). For each: set `overstay_notified_at = now` **only if not set** (marks suspected abandoned even without Telegram; overlapping runs can't double-alert), then Telegram the owner if they have `telegram_chat_id`.
+
+**Telegram messages** include the space `address`, lot number and time in SGT (UTC+8). Both Lambdas need `GetItem` on `sbp-spaces` and `sbp-users`.
+
+**Logging (measured results):** one JSON line per handled event, e.g.
+`{"fn": "handle_event", "type": "tamper", "lot_id": "space1#lot1", "status": "taken", "action": "alert", "notified": true, "received_at": "...", "device_ts": "..." , "latency_ms": 420}`.
+`latency_ms` = Lambda receive time − ESP32 `ts` (only if the ESP32 sends `ts` and has NTP time). CloudWatch Logs Insights can then give event counts, alert success rate and latency for the slides.
 
 ---
 
@@ -274,7 +305,7 @@ The ESP32 only reports IR state changes; it **never** locks or decides anything 
 - Cognito (user pool only): `AdminConfirmSignUp`, `AdminUpdateUserAttributes`, `AdminCreateUser`, `AdminSetUserPassword`, `AdminGetUser`. (`SignUp`, `InitiateAuth`, `ForgotPassword`, `ConfirmForgotPassword` need no IAM permission.)
 
 ### Web app `.env` (gitignored; see `webapp/.env.example`)
-`BACKEND`, `SESSION_SECRET`, `AWS_PROFILE`, `AWS_REGION`, `IOT_DATA_ENDPOINT`, `TABLE_PREFIX`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`
+`BACKEND`, `SESSION_SECRET`, `AWS_PROFILE`, `AWS_REGION`, `IOT_DATA_ENDPOINT`, `TABLE_PREFIX`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `RELEASE_TIMEOUT_MINUTES` (demo `2`), `UNREGISTERED_LIMIT_MINUTES` (demo `2`, deployment e.g. `1440`)
 
 ### Lambda environment variables (Terraform)
 `TABLE_PREFIX`, `TELEGRAM_BOT_TOKEN` (sensitive variable), `OVERSTAY_LIMIT_MINUTES` (demo `2`, deployment e.g. `4320` = 3 days)
