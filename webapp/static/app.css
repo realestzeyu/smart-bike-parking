@@ -31,6 +31,37 @@
   display: inline-block;
 }
 
+/* ---- Buttons and form fields ---- */
+.btn-primary, .btn-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 999px;
+  padding: 15px 24px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.btn-primary { background: #0F766E; color: #fff; }
+.btn-primary:hover { background: #0C625B; }
+.btn-secondary { background: #fff; color: #0F766E; border: 2px solid #0F766E; }
+.btn-secondary:hover { background: #E3F1EF; }
+.btn-danger { background: #B91C1C; color: #fff; border-radius: 999px; padding: 8px 16px; font-weight: 600; }
+.btn-small { border-radius: 999px; padding: 6px 14px; font-weight: 600; border: 1.5px solid #0F766E; color: #0F766E; background: #fff; }
+.btn-small:hover { background: #E3F1EF; }
+
+.field { display: block; margin-top: 16px; }
+.field span { display: block; font-weight: 500; margin-bottom: 6px; }
+.field input {
+  width: 100%;
+  border: 1.5px solid #D6D3CB;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 17px;
+  background: #fff;
+}
+.field input:focus { outline: none; border-color: #0F766E; box-shadow: 0 0 0 3px #E3F1EF; }
+
 /* Floating controls over the map are the only things with a shadow. */
 .map-control {
   box-shadow: 0 1px 4px rgba(31, 31, 28, 0.15);
@@ -73,7 +104,43 @@ body.detail-open #overview,
 body.detail-open .tabbar,
 body.detail-open #locate { display: none; }
 
+/* ---- Officer console ---- */
+.card { background: #fff; border: 1px solid #E4E2DC; border-radius: 10px; }
+.badge { display: inline-block; border-radius: 999px; padding: 3px 12px; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.count-pin {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  border: 3px solid #fff;
+  background: #B91C1C;
+  color: #fff;
+  font: 600 16px/1 "IBM Plex Sans", system-ui, sans-serif;
+}
+.station-dot {
+  display: block;
+  width: 18px;
+  height: 18px;
+  transform: translate(-50%, -50%);
+  border-radius: 5px;
+  border: 2px solid #fff;
+  background: #0F766E;
+}
+
 .leaflet-container { font-family: "IBM Plex Sans", system-ui, sans-serif; background: #EEF0EA; }
 /* Mute the OpenStreetMap colours toward the mockup's grey-green ground. */
 .leaflet-tile-pane { filter: grayscale(0.85) sepia(0.12) brightness(1.06) contrast(0.88); }
 .leaflet-control-attribution { font-size: 10px; }
+
+/* Lot grid boxes on the station sheet (free ones are links to the lot page). */
+.lot-box {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-width: 2px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}

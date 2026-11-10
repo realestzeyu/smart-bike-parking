@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{# Phone page in the station-sheet style: map (or plain ground) on top, white sheet below. #}
+{% block head %}
+{% if map_at %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endif %}
+{% endblock %}
+{% block body %}
+<div class="min-h-screen flex flex-col bg-ground">
+  <header class="relative shrink-0 {{ 'h-[30vh] min-h-[180px]' if map_at else 'h-24' }}">
+    {% if map_at %}
+    <div id="mini-map" class="absolute inset-0" data-lat="{{ map_at.lat }}" data-lng="{{ map_at.lng }}"
+         data-label="{{ map_at.label }}" data-level="{{ map_at.level }}" aria-hidden="true"></div>
+    {% endif %}
+    <a href="{{ back_href | default('/') }}" class="map-control absolute top-5 left-4 z-[1000] h-12 w-12 rounded-full bg-white border border-stone-line grid place-items-center"
+       aria-label="{{ back_label | default('All stations') }}">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+    </a>
+  </header>
+  <main class="sheet relative z-[1000] -mt-3 flex-1 flex flex-col bg-white px-5 pt-3 pb-8">
+    <div class="handle"></div>
+    {% block sheet %}{% endblock %}
+  </main>
+</div>
+{% if map_at %}<script src="/static/mini-map.js"></script>{% endif %}
+{% endblock %}

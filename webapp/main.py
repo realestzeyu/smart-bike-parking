@@ -12,9 +12,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 import config
-from auth import LoginRequired
+from auth import LoginRequired, OfficerRequired
 from backend import get_backend
-from pages import public
+from templating import templates
+from pages import auth_pages, lot, officer, public
 
 app = FastAPI(title="Smart Bicycle Parking")
 # Cookie lasts 30 days so repeat QR scans stay logged in.
@@ -24,11 +25,22 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 
 @app.exception_handler(LoginRequired)
 async def login_required(request: Request, exc: LoginRequired):
-    return RedirectResponse(f"/login?next={quote(request.url.path)}", status_code=303)
+    target = request.url.path + (f"?{request.url.query}" if request.url.query else "")
+    return RedirectResponse(f"/login?next={quote(target)}", status_code=303)
+
+
+@app.exception_handler(OfficerRequired)
+async def officer_required(request: Request, exc: OfficerRequired):
+    return templates.TemplateResponse(request, "officer_only.html", {"user": exc.user}, status_code=403)
 
 
 app.include_router(public.router)
+app.include_router(lot.router)
+app.include_router(auth_pages.router)
+app.include_router(officer.router)
 
 get_backend()  # create it at startup so fake-mode accounts are printed once
 if config.BACKEND == "fake":
-    print("BACKEND=fake. Test accounts: officer / officer, alice / alice")
+    from pages import dev
+    app.include_router(dev.router)  # /dev only exists in fake mode
+    print("BACKEND=fake. Test accounts: officer / officer1, alice / alice123. Demo helper: /dev")

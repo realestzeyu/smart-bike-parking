@@ -24,10 +24,13 @@
   <h3 class="mt-7 font-semibold">Lot status</h3>
   <ul class="mt-3 grid grid-cols-10 gap-2">
     {% for lot in s.lots %}
-    {% set free = lot.status == "free" %}
-    <li class="aspect-square rounded grid place-items-center text-sm font-semibold border-2
-               {{ 'border-teal text-teal' if free else 'border-stone bg-stone text-white' }}"
-        aria-label="Lot {{ lot.id | lot_number }}, {{ 'free' if free else 'occupied' }}">{{ lot.id | lot_number }}</li>
+    {% set n = lot.id | lot_number %}
+    {% if lot.status == "free" %}
+    <li><a href="/lot/{{ lot.id | lot_ref }}" class="lot-box border-teal text-teal hover:bg-teal-soft"
+           aria-label="Lot {{ n }}, free. Open to use it">{{ n }}</a></li>
+    {% else %}
+    <li class="lot-box border-stone bg-stone text-white" aria-label="Lot {{ n }}, occupied">{{ n }}</li>
+    {% endif %}
     {% endfor %}
   </ul>
   <ul class="mt-4 flex gap-6 text-stone">
@@ -35,10 +38,8 @@
     <li class="flex items-center gap-2"><span class="h-4 w-4 rounded-sm bg-stone"></span>Occupied</li>
   </ul>
 
-  <a href="https://www.google.com/maps/dir/?api=1&destination={{ s.lat }},{{ s.lng }}&travelmode=walking"
-     target="_blank" rel="noopener"
-     class="mt-auto pt-0 flex items-center justify-center gap-3 rounded-full bg-teal text-white text-lg font-semibold py-4 hover:bg-[#0c625b]">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l7 19-7-4-7 4z"/></svg>
-    Get directions
-  </a>
+  <p class="mt-5 text-stone">
+    {% if s.free %}Tap a free lot to use it. At the rack, you can also scan the QR code on the lot with your phone camera.
+    {% else %}No free lots here right now. Go back to the map to find another station.{% endif %}
+  </p>
 </div>

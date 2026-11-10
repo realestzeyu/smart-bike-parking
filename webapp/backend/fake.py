@@ -6,41 +6,58 @@ simulate_event() and flag_overstays() stand in for the ESP32 and the Lambdas (us
 
 import copy
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from starting_data import LOTS, OFFICER, SPACES
+from starting_data import DEMO_USER, LOTS, OFFICER, SPACES, simulated_rows
 
 from .base import Backend, now_iso
 
-# Fake-only accounts (plaintext, never used with BACKEND=aws).
-FAKE_ACCOUNTS = {
-    OFFICER["id"]: {**OFFICER, "password": "officer"},
-    "alice": {"id": "alice", "name": "Alice Tan", "email": "alice@example.com", "password": "alice", "role": "cyclist"},
+# Fake-only accounts, never used with BACKEND=aws. Passwords are kept apart from the
+# user rows, the way Cognito keeps them apart from sbp-users.
+FAKE_USERS = {
+    OFFICER["id"]: dict(OFFICER, email="officer@example.com"),
+    "alice": {"id": "alice", "name": "Alice Tan", "email": "alice@example.com", "role": "cyclist"},
+    DEMO_USER["id"]: dict(DEMO_USER),  # owner of the simulated parked bikes; no password, can't log in
 }
+FAKE_PASSWORDS = {OFFICER["id"]: "officer1", "alice": "alice123"}
+
+# There is no IR sensor in fake mode, so after an Unlock the fake "ESP32" reports bike_left by itself.
+BIKE_LEFT_AFTER_SECONDS = 8
 
 
 class FakeBackend(Backend):
     def __init__(self):
         self._lock = threading.Lock()
-        self.users = copy.deepcopy(FAKE_ACCOUNTS)
-        self.spaces = {s["id"]: dict(s) for s in SPACES}
-        self.lots = {(l["space_id"], l["id"]): dict(l) for l in LOTS}
-        self.sessions = {}
+        self.users = copy.deepcopy(FAKE_USERS)
+        self.passwords = dict(FAKE_PASSWORDS)  # stands in for Cognito
+        sim_spaces, sim_lots, sim_sessions = simulated_rows()
+        self.spaces = {s["id"]: dict(s) for s in SPACES + sim_spaces}
+        self.lots = {(l["space_id"], l["id"]): dict(l) for l in LOTS + sim_lots}
+        self.sessions = {s["id"]: dict(s) for s in sim_sessions}
+        self.flag_overstays(3 * 1440)  # simulated bikes parked over 3 days start as suspected abandoned
         self.tamper_events = {}
         self.published = []  # (lot_id, payload) log of open commands
+        self._leaving = set()  # lots with an automatic bike_left already scheduled
 
     # Users
     def get_user(self, user_id):
         u = self.users.get(user_id)
         return dict(u) if u else None
 
-    def create_user(self, user):
+    def authenticate(self, user_id, password):
+        if self.passwords.get(user_id) != password:
+            return None
+        return self.get_user(user_id)
+
+    def sign_up(self, user_id, name, email, password):
         with self._lock:
-            if user["id"] in self.users:
-                return False
-            self.users[user["id"]] = dict(user)
-            return True
+            if user_id in self.users:
+                return "That username is taken. Pick another one."
+            self.passwords[user_id] = password
+            self.users[user_id] = {"id": user_id, "name": name, "email": email, "role": "cyclist"}
+            return None
 
     def set_telegram_chat_id(self, user_id, chat_id):
         self.users[user_id]["telegram_chat_id"] = chat_id
@@ -67,7 +84,8 @@ class FakeBackend(Backend):
             if not lot or lot["status"] != "free":
                 return False
             session_id = str(uuid.uuid4())
-            self.sessions[session_id] = {"id": session_id, "lot_id": lot_id, "user_id": user_id, "start_time": now_iso()}
+            self.sessions[session_id] = {"id": session_id, "lot_id": lot_id, "user_id": user_id,
+                                         "start_time": now_iso(), "is_open": "Y"}
             lot.update(status="taken", user_id=user_id, session_id=session_id)
             return True
 
@@ -79,14 +97,29 @@ class FakeBackend(Backend):
             if not is_officer and lot.get("user_id") != user_id:
                 return False
             lot["status"] = "releasing"
-            self.sessions[lot["session_id"]]["end_time"] = now_iso()
+            session = self.sessions[lot["session_id"]]
+            session["end_time"] = now_iso()
+            session.pop("is_open", None)
             return True
 
     # Commands
     def publish_open(self, lot_id):
         request_id = str(uuid.uuid4())
-        self.published.append((lot_id, {"action": "open", "requestId": request_id}))
+        self.published.append((lot_id, {"action": "open", "requestId": request_id, "expires": int(time.time()) + 30}))
+        space_id = lot_id.split("#")[0]
+        lot = self.lots.get((space_id, lot_id))
+        # Pretend to be the cyclist + IR sensor: after an unlock, the bike leaves a few seconds later.
+        if lot and lot["status"] == "releasing" and lot_id not in self._leaving:
+            self._leaving.add(lot_id)
+            timer = threading.Timer(BIKE_LEFT_AFTER_SECONDS, self._auto_bike_left, args=(space_id, lot_id))
+            timer.daemon = True
+            timer.start()
         return request_id
+
+    def _auto_bike_left(self, space_id, lot_id):
+        self._leaving.discard(lot_id)
+        if self.lots[(space_id, lot_id)]["status"] == "releasing":  # still waiting for the bike to go
+            self.simulate_event(space_id, lot_id, "bike_left")
 
     # Read-only lists
     def get_session(self, session_id):
@@ -94,7 +127,7 @@ class FakeBackend(Backend):
         return dict(s) if s else None
 
     def list_open_sessions(self):
-        return [dict(s) for s in self.sessions.values() if "end_time" not in s]
+        return [dict(s) for s in self.sessions.values() if s.get("is_open") == "Y"]
 
     def list_tamper_events(self):
         return sorted((dict(e) for e in self.tamper_events.values()), key=lambda e: e["detected_time"], reverse=True)
@@ -124,7 +157,7 @@ class FakeBackend(Backend):
         with self._lock:
             for lot in self.lots.values():
                 s = self.sessions.get(lot.get("session_id")) if lot["status"] == "taken" else None
-                if s and s["start_time"] < cutoff and "notified_overstay" not in s:
-                    s["notified_overstay"] = now_iso()
+                if s and s["start_time"] < cutoff and "overstay_notified_at" not in s:
+                    s["overstay_notified_at"] = now_iso()
                     flagged += 1
         return flagged

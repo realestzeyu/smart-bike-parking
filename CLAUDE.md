@@ -9,7 +9,7 @@ School IoT + cloud project (PoC). Smart locks fitted to existing bicycle racks a
 ## Stack
 - **ESP32** (one per parking space) → **AWS IoT Core** (MQTT over TLS, X.509 cert). Sensors per lot: IR (bike present), SW-420 (tamper), 3 V solenoid via relay (lock).
 - **IoT Rule** → Lambda `handle_event`. **EventBridge Scheduler** → Lambda `check_overstay`. Lambdas are Python.
-- **DynamoDB** (on-demand, key-value): `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions`, `sbp-tamper-events` (team ER diagram + needed fields; updated 10 Nov). Starting data (spaces, lots, officer) is loaded by `webapp/load_starting_data.py` (create-only), not Terraform.
+- **DynamoDB** (on-demand, key-value): `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions`, `sbp-tamper-events` (team ER diagram + needed fields; updated 10 Nov). Starting data (space1 + 3 simulated stations, lots, officer) is loaded by `webapp/load_starting_data.py` (create-only), not Terraform.
 - **Web app**: FastAPI + HTML pages (Jinja2, Tailwind, HTMX, Leaflet), uvicorn on port 8000. Cyclist and officer pages in one app. Talks to AWS directly with `boto3`. Login via **Amazon Cognito** (own login/sign-up pages, boto3 server-side; Cognito holds passwords, `sbp-users` holds profile + role).
 - **Telegram**: one-way alerts to cyclists only (tamper, overstay), sent by the Lambdas.
 - **Infra**: Terraform in `infra/`, local state, region `ap-southeast-1`.
@@ -20,7 +20,7 @@ See `docs/agreed-names-and-formats.md`. **Both halves depend on it.** Don't inve
 ## Repo layout
 - `infra/` Terraform
 - `lambdas/handle_event/`, `lambdas/check_overstay/` Lambda code
-- `webapp/` FastAPI app (see `webapp/CLAUDE.md`); target UI images in `webapp/design/`
+- `webapp/` FastAPI app (setup: `webapp/README.md`; rules: `webapp/CLAUDE.md`); target UI images in `webapp/design/`
 - `simulator/` fake ESP32 script for testing without hardware
 - `firmware/` ESP32 code (later)
 - `certs/` device certificates (gitignored)

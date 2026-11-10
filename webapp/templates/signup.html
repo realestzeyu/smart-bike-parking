@@ -1,0 +1,29 @@
+{% extends "_phone.html" %}
+{% set back_href = "/login?next=" ~ (next | urlencode) %}
+{% set back_label = "Back to log in" %}
+{% block title %}Create an account · Bicycle Parking{% endblock %}
+{% block sheet %}
+<h1 class="mt-5 text-2xl font-semibold">Create an account</h1>
+<p class="mt-1 text-stone">Free for cyclists. You'll use it to lock and unlock your bike.</p>
+
+{% if error %}<p class="mt-5 rounded bg-alert-soft text-alert px-4 py-3" role="alert">{{ error }}</p>{% endif %}
+
+<form method="post" action="/signup" class="mt-2">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label class="field"><span>Username</span>
+    <input name="username" value="{{ form.username or '' }}" autocomplete="username" autocapitalize="none"
+           pattern="[a-zA-Z0-9_]{3,20}" title="3 to 20 letters, numbers or _" required autofocus>
+  </label>
+  <label class="field"><span>Name</span>
+    <input name="name" value="{{ form.name or '' }}" autocomplete="name" required>
+  </label>
+  <label class="field"><span>Email</span>
+    <input name="email" type="email" value="{{ form.email or '' }}" autocomplete="email" required>
+  </label>
+  <label class="field"><span>Password</span>
+    <input name="password" type="password" minlength="8" autocomplete="new-password" required>
+    <small class="block mt-1.5 text-stone">At least 8 characters.</small>
+  </label>
+  <button class="btn-primary w-full mt-8">Create account</button>
+</form>
+{% endblock %}

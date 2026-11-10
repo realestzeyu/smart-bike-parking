@@ -30,9 +30,10 @@ def lot_number(lot_id):
 
 
 class Backend:
-    # Users
+    # Users and login (aws: Cognito holds passwords; sbp-users holds name, email, role, telegram_chat_id)
     def get_user(self, user_id): ...
-    def create_user(self, user): ...  # returns False if the username exists
+    def authenticate(self, user_id, password): ...  # returns the sbp-users row, or None if wrong
+    def sign_up(self, user_id, name, email, password): ...  # cyclists only; returns an error message or None
     def set_telegram_chat_id(self, user_id, chat_id): ...
 
     # Spaces and lots
@@ -50,5 +51,5 @@ class Backend:
 
     # Read-only lists (officer console)
     def get_session(self, session_id): ...
-    def list_open_sessions(self): ...  # sessions with no end_time
+    def list_open_sessions(self): ...  # sessions with is_open = "Y"
     def list_tamper_events(self): ...  # newest first

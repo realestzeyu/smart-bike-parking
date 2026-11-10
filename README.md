@@ -17,13 +17,7 @@ ESP32 (sensors + solenoid lock) ⇄ AWS IoT Core (MQTT) → Lambdas → DynamoDB
 | `docs/` | `handoff.md`, `agreed-names-and-formats.md` (table, field and topic names) |
 
 ## Run the web app
-Not built yet: `webapp/main.py` is still an old NiceGUI template, to be replaced by the FastAPI app. Once built:
-```
-cd webapp
-uv venv .venv && source .venv/bin/activate
-uv pip install -r requirements.txt
-cp .env.example .env     # BACKEND=fake needs only SESSION_SECRET
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload   # http://localhost:8000
-```
+Quick start: `bash webapp/run.sh` (Git Bash on Windows), then open http://127.0.0.1:8000.
+Setup, test accounts and a demo walk-through: **[`webapp/README.md`](webapp/README.md)**.
 
 See `CLAUDE.md` for project rules and `webapp/CLAUDE.md` for web app details.

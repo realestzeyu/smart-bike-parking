@@ -21,6 +21,8 @@ AWS_PROFILE = os.getenv("AWS_PROFILE") or None
 AWS_REGION = os.getenv("AWS_REGION", "ap-southeast-1")
 IOT_DATA_ENDPOINT = os.getenv("IOT_DATA_ENDPOINT", "")
 TABLE_PREFIX = os.getenv("TABLE_PREFIX", "sbp-")
+COGNITO_USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID", "")
+COGNITO_CLIENT_ID = os.getenv("COGNITO_CLIENT_ID", "")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")

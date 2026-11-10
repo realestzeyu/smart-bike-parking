@@ -5,6 +5,7 @@ import math
 from fastapi import APIRouter, HTTPException, Request
 
 from backend import get_backend
+from backend.base import lot_number
 from templating import templates
 
 router = APIRouter()
@@ -25,7 +26,7 @@ def distance_m(a, b):
 
 def summarise(space):
     """A station with its live counts, as shown on the map and in the sheet."""
-    lots = get_backend().list_lots(space["id"])
+    lots = sorted(get_backend().list_lots(space["id"]), key=lambda lot: int(lot_number(lot["id"])))
     total = len(lots)
     free = sum(1 for lot in lots if lot["status"] == "free")
     # Full = none free; few left = under a quarter free (matches "2 free" amber in the mockup).

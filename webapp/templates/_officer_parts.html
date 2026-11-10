@@ -1,0 +1,78 @@
+{# Console sections. oob=True when sent by /officer/data (HTMX out-of-band swap by id). #}
+
+{% macro kpis(kpi, oob=False) %}
+<section id="kpis" {% if oob %}hx-swap-oob="true"{% endif %} class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+  <div class="card p-6">
+    <h2 class="text-stone">Stations monitored</h2>
+    <p class="mt-2 text-5xl font-semibold">{{ kpi.stations }}</p>
+    <p class="mt-3 text-stone">{{ kpi.lots }} lot{{ "" if kpi.lots == 1 else "s" }}</p>
+  </div>
+  <div class="card p-6">
+    <h2 class="text-stone">Utilisation now</h2>
+    <p class="mt-2 text-5xl font-semibold">{{ kpi.utilisation }}%</p>
+    <p class="mt-3 text-stone">{{ kpi.occupied }} of {{ kpi.lots }} lots occupied</p>
+  </div>
+  <div class="card p-6 {{ 'bg-amber-soft border-[#F1D3B0]' if kpi.abandoned else '' }}">
+    <h2 class="{{ 'text-amber' if kpi.abandoned else 'text-stone' }}">Suspected abandoned bikes</h2>
+    <p class="mt-2 text-5xl font-semibold {{ 'text-amber' if kpi.abandoned }}">{{ kpi.abandoned }}</p>
+    <p class="mt-3 {{ 'text-amber' if kpi.abandoned else 'text-stone' }}">Parked over the time limit</p>
+  </div>
+  <div class="card p-6">
+    <h2 class="text-stone">Tamper alerts (7 days)</h2>
+    <p class="mt-2 text-5xl font-semibold {{ 'text-alert' if kpi.tamper_week }}">{{ kpi.tamper_week }}</p>
+    <p class="mt-3 text-stone">{% if kpi.last_tamper %}Latest {{ kpi.last_tamper | sgt_datetime }}{% else %}None this week{% endif %}</p>
+  </div>
+</section>
+{% endmacro %}
+
+{% macro parked_table(parked, oob=False, shown=8) %}
+<div id="parked" {% if oob %}hx-swap-oob="true"{% endif %}>
+  {% if parked %}
+  <table class="w-full text-left">
+    <thead class="text-stone text-sm">
+      <tr class="border-b border-stone-line"><th class="py-2 pr-3 font-medium whitespace-nowrap">Station · lot</th><th class="py-2 pr-3 font-medium whitespace-nowrap">Parked for</th><th class="py-2 pr-3 font-medium">Status</th><th class="py-2"><span class="sr-only">Action</span></th></tr>
+    </thead>
+    <tbody>
+      {% for s in parked[:shown] %}
+      <tr class="border-b border-stone-line align-middle">
+        <td class="py-3 pr-3"><span class="font-medium">{{ s.lot_label }}</span><span class="block text-sm text-stone">{{ s.station }} · {{ s.owner }}</span></td>
+        <td class="py-3 pr-3 font-mono whitespace-nowrap {{ 'text-alert' if s.abandoned else '' }}">{{ s.start_time | parked_for }}</td>
+        <td class="py-3 pr-3">
+          {% if s.abandoned %}<span class="badge bg-alert-soft text-alert">Abandoned?</span>
+          {% else %}<span class="badge bg-[#EFEDE7] text-stone">Parked</span>{% endif %}
+        </td>
+        <td class="py-3 text-right"><a href="/officer?confirm={{ s.ref }}" class="btn-small whitespace-nowrap">Force unlock</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if parked | length > shown %}<p class="mt-3 text-stone">Showing the {{ shown }} longest of {{ parked | length }} parked bicycles.</p>{% endif %}
+  {% else %}
+  <p class="text-stone">No bicycles parked right now.</p>
+  {% endif %}
+</div>
+{% endmacro %}
+
+{% macro tamper_table(tamper, oob=False) %}
+<div id="tamper" {% if oob %}hx-swap-oob="true"{% endif %}>
+  {% if tamper %}
+  <table class="w-full text-left">
+    <thead class="text-stone text-sm">
+      <tr class="border-b border-stone-line"><th class="py-2 pr-4 font-medium">Time</th><th class="py-2 pr-4 font-medium">Station · lot</th><th class="py-2 pr-4 font-medium">Bike owner</th><th class="py-2 font-medium">Telegram alert</th></tr>
+    </thead>
+    <tbody>
+      {% for e in tamper %}
+      <tr class="border-b border-stone-line">
+        <td class="py-3 pr-4 font-mono">{{ e.detected_time | sgt_datetime }}</td>
+        <td class="py-3 pr-4">{{ e.where }}</td>
+        <td class="py-3 pr-4">{{ e.owner or "No bike parked" }}</td>
+        <td class="py-3">{{ "Sent" if e.notified else "Not sent" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-stone">No tamper alerts.</p>
+  {% endif %}
+</div>
+{% endmacro %}

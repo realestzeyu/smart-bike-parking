@@ -1,0 +1,39 @@
+{% extends "_phone.html" %}
+{% set back_href = "/" %}
+{% set back_label = "Back to the map" %}
+{% block title %}Profile · Bicycle Parking{% endblock %}
+{% block sheet %}
+<div class="pb-16">
+{% if user %}
+  <h1 class="mt-5 text-2xl font-semibold">{{ user.name }}</h1>
+  <p class="mt-1 text-stone">{{ user.id }} · {{ "Officer" if user.role == "officer" else "Cyclist" }}</p>
+
+  <dl class="mt-6 border-t border-stone-line">
+    <div class="flex items-center justify-between gap-4 py-4 border-b border-stone-line">
+      <dt>Email</dt><dd class="text-stone truncate">{{ user.email or "Not set" }}</dd>
+    </div>
+    <div class="flex items-center justify-between gap-4 py-4 border-b border-stone-line">
+      <dt>Telegram alerts</dt>
+      <dd>{% if user.telegram_chat_id %}<span class="text-teal font-medium">On</span>
+          {% else %}<a href="/connect-telegram?next=/profile" class="text-teal font-semibold underline underline-offset-2">Connect Telegram</a>{% endif %}</dd>
+    </div>
+  </dl>
+
+  <div class="mt-8 space-y-3">
+    {% if user.role == "officer" %}<a href="/officer" class="btn-primary w-full">Open officer console</a>{% endif %}
+    <form method="post" action="/logout">
+      <input type="hidden" name="next" value="/profile">
+      <button class="btn-secondary w-full">Log out</button>
+    </form>
+  </div>
+{% else %}
+  <h1 class="mt-5 text-2xl font-semibold">Profile</h1>
+  <p class="mt-1 text-stone">Log in to use and unlock lots. Officers log in here too.</p>
+  <div class="mt-8 space-y-3">
+    <a href="/login?next=/profile" class="btn-primary w-full">Log in</a>
+    <a href="/signup?next=/profile" class="btn-secondary w-full">Create an account</a>
+  </div>
+{% endif %}
+</div>
+{% set active = "profile" %}{% include "_tabbar.html" %}
+{% endblock %}

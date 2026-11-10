@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% from "_officer_parts.html" import kpis, parked_table, tamper_table %}
+{% block title %}Bicycle Parking Console{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endblock %}
+{% block body %}
+<header class="bg-white border-b border-stone-line">
+  <div class="max-w-[1400px] mx-auto px-6 h-[72px] flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3">
+      <span class="h-10 w-10 rounded bg-teal text-white grid place-items-center text-lg font-bold" aria-hidden="true">P</span>
+      <span class="text-xl font-semibold">Bicycle Parking Console</span>
+    </div>
+    <form method="post" action="/logout" class="text-stone">
+      {{ user.name }} · <button class="text-teal underline underline-offset-2">Log out</button>
+    </form>
+  </div>
+</header>
+
+<main class="max-w-[1400px] mx-auto px-6 py-8 space-y-6">
+  {# Force unlock: on-page confirm, outside the 5 s refresh #}
+  {% if confirm %}
+  <section class="card border-alert p-5 flex flex-wrap items-center justify-between gap-4" role="alertdialog" aria-labelledby="confirm-title">
+    <div>
+      <h2 id="confirm-title" class="font-semibold text-lg">Force unlock {{ confirm.where }}?</h2>
+      <p class="text-stone">This opens the lock for whoever is at the rack and ends {{ confirm.owner }}'s parking. Check the person's identity first.</p>
+    </div>
+    <div class="flex gap-3">
+      <a href="/officer" class="btn-small">Keep locked</a>
+      <form method="post" action="/officer/force-unlock/{{ confirm.ref }}"><button class="btn-danger">Force unlock</button></form>
+    </div>
+  </section>
+  {% elif done %}
+  <p class="card border-teal bg-teal-soft text-teal px-5 py-4" role="status">Lock opened for {{ done | replace("_", " · ") }}. The lot frees itself when the bike leaves.</p>
+  {% elif failed %}
+  <p class="card border-alert bg-alert-soft text-alert px-5 py-4" role="alert">Couldn't force unlock {{ failed | replace("_", " · ") }}: it isn't in use any more.</p>
+  {% endif %}
+
+  {{ kpis(kpi) }}
+
+  <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+    <section class="card p-6 xl:col-span-3">
+      <div class="flex flex-wrap items-baseline gap-x-3">
+        <h2 class="text-xl font-semibold">Stations with abandoned bicycles</h2>
+        <p class="text-stone">Pin number = suspected abandoned bikes at that station</p>
+      </div>
+      <div id="console-map" class="mt-5 h-[420px] rounded bg-ground"></div>
+      <ul class="mt-4 flex flex-wrap gap-6 text-stone">
+        <li class="flex items-center gap-2"><span class="dot bg-alert"></span>Suspected abandoned bikes</li>
+        <li class="flex items-center gap-2"><span class="dot bg-teal"></span>No abandoned bikes</li>
+      </ul>
+    </section>
+    <section class="card p-6 xl:col-span-2">
+      <h2 class="text-xl font-semibold">Longest-parked bicycles</h2>
+      <div class="mt-4">{{ parked_table(parked) }}</div>
+    </section>
+  </div>
+
+  <section class="card p-6">
+    <h2 class="text-xl font-semibold">Tamper log</h2>
+    <div class="mt-4">{{ tamper_table(tamper) }}</div>
+  </section>
+
+  <p class="text-sm text-stone">A bicycle counts as suspected abandoned once its owner has been sent an overstay reminder. Refreshes every 5 s.</p>
+</main>
+
+<div hx-get="/officer/data" hx-trigger="every 5s" hx-swap="none" aria-hidden="true"></div>
+<script id="console-stations" type="application/json">{{ stations | tojson }}</script>
+<script src="/static/officer.js"></script>
+{% endblock %}

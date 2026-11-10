@@ -9,7 +9,7 @@ import uuid
 from decimal import Decimal
 
 import boto3
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Key
 from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
@@ -42,6 +42,8 @@ class AwsBackend(Backend):
         self.db = session.resource("dynamodb")
         self.client = session.client("dynamodb")
         self.iot = session.client("iot-data", endpoint_url="https://" + config.IOT_DATA_ENDPOINT)
+        self.cognito = session.client("cognito-idp")
+        self.pool_id, self.client_id = config.COGNITO_USER_POOL_ID, config.COGNITO_CLIENT_ID
         p = config.TABLE_PREFIX
         self.t_spaces, self.t_lots, self.t_users = p + "spaces", p + "lots", p + "users"
         self.t_sessions, self.t_tamper = p + "sessions", p + "tamper-events"
@@ -64,14 +66,43 @@ class AwsBackend(Backend):
     def get_user(self, user_id):
         return _plain(self._table(self.t_users).get_item(Key={"id": user_id}).get("Item"))
 
-    def create_user(self, user):
+    def authenticate(self, user_id, password):
+        # Cognito checks the password; sbp-users gives the profile and role.
         try:
-            self._table(self.t_users).put_item(Item=user, ConditionExpression="attribute_not_exists(id)")
-            return True
+            self.cognito.initiate_auth(
+                ClientId=self.client_id,
+                AuthFlow="USER_PASSWORD_AUTH",
+                AuthParameters={"USERNAME": user_id, "PASSWORD": password},
+            )
         except ClientError as e:
-            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                return False
+            if e.response["Error"]["Code"] in ("NotAuthorizedException", "UserNotFoundException", "UserNotConfirmedException"):
+                return None
             raise
+        return self.get_user(user_id)
+
+    def sign_up(self, user_id, name, email, password):
+        # agreed-names "Login (Cognito)": sign up, confirm, mark email verified, then the sbp-users row.
+        try:
+            self.cognito.sign_up(
+                ClientId=self.client_id, Username=user_id, Password=password,
+                UserAttributes=[{"Name": "email", "Value": email}],
+            )
+        except ClientError as e:
+            code = e.response["Error"]["Code"]
+            if code == "UsernameExistsException":
+                return "That username is taken. Pick another one."
+            if code == "InvalidPasswordException":
+                return "Password must be at least 8 characters."
+            if code == "InvalidParameterException":
+                return "Check the email address and try again."
+            raise
+        self.cognito.admin_confirm_sign_up(UserPoolId=self.pool_id, Username=user_id)
+        self.cognito.admin_update_user_attributes(
+            UserPoolId=self.pool_id, Username=user_id,
+            UserAttributes=[{"Name": "email_verified", "Value": "true"}],
+        )
+        self._table(self.t_users).put_item(Item={"id": user_id, "name": name, "email": email, "role": "cyclist"})
+        return None
 
     def set_telegram_chat_id(self, user_id, chat_id):
         self._table(self.t_users).update_item(
@@ -110,7 +141,7 @@ class AwsBackend(Backend):
                 }},
                 {"Put": {
                     "TableName": self.t_sessions,
-                    "Item": _av({"id": session_id, "lot_id": lot_id, "user_id": user_id, "start_time": now_iso()}),
+                    "Item": _av({"id": session_id, "lot_id": lot_id, "user_id": user_id, "start_time": now_iso(), "is_open": "Y"}),
                 }},
             ])
             return True
@@ -140,7 +171,7 @@ class AwsBackend(Backend):
                 {"Update": {
                     "TableName": self.t_sessions,
                     "Key": _av({"id": lot["session_id"]}),
-                    "UpdateExpression": "SET end_time = :e",
+                    "UpdateExpression": "SET end_time = :e REMOVE is_open",
                     "ExpressionAttributeValues": _av({":e": now_iso()}),
                 }},
             ])
@@ -163,7 +194,17 @@ class AwsBackend(Backend):
         return _plain(self._table(self.t_sessions).get_item(Key={"id": session_id}).get("Item"))
 
     def list_open_sessions(self):
-        return self._scan(self.t_sessions, FilterExpression=Attr("end_time").not_exists())
+        # Sparse index: only open sessions carry is_open = "Y".
+        table, items, start = self._table(self.t_sessions), [], None
+        while True:
+            kw = {"IndexName": "open-sessions", "KeyConditionExpression": Key("is_open").eq("Y")}
+            if start:
+                kw["ExclusiveStartKey"] = start
+            resp = table.query(**kw)
+            items += resp.get("Items", [])
+            start = resp.get("LastEvaluatedKey")
+            if not start:
+                return [_plain(i) for i in items]
 
     def list_tamper_events(self):
         return sorted(self._scan(self.t_tamper), key=lambda e: e["detected_time"], reverse=True)

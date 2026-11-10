@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Demo helper{% endblock %}
+{% block body %}
+<main class="max-w-3xl mx-auto px-4 py-8 space-y-6">
+  <div>
+    <h1 class="text-2xl font-semibold">Demo helper</h1>
+    <p class="mt-1 text-stone">Fake backend only. These buttons do what the ESP32 and the Lambdas will do once AWS is live.</p>
+  </div>
+
+  {% if msg %}<p class="card border-teal bg-teal-soft text-teal px-5 py-3" role="status">{{ msg }}</p>{% endif %}
+
+  {% for space, real, lots in groups %}
+  <details class="space-y-3" {% if real %}open{% endif %}>
+  <summary class="cursor-pointer text-lg font-semibold py-2">{{ space.address }}{% if not real %} <span class="font-normal text-stone">(simulated, {{ lots | length }} lots)</span>{% endif %}</summary>
+  {% for lot in lots %}
+  {% set ref = lot.id | lot_ref %}
+  <section class="card p-5">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 class="text-lg font-semibold">Lot {{ lot.id | lot_number }}</h2>
+      <a href="/lot/{{ ref }}" class="text-teal underline underline-offset-2">Open lot page</a>
+    </div>
+    <p class="mt-1 text-stone">
+      Status <strong class="text-ink">{{ lot.status }}</strong> ·
+      bike {{ "detected" if lot.bike_present else "not detected" }}
+      {% if lot.user_id %} · owner <strong class="text-ink">{{ lot.user_id }}</strong>{% endif %}
+    </p>
+    <div class="mt-4 flex flex-wrap gap-3">
+      {% for event in events %}
+      <form method="post" action="/dev/event">
+        <input type="hidden" name="lot_ref" value="{{ ref }}">
+        <input type="hidden" name="event" value="{{ event }}">
+        <button class="btn-small">{{ event }}</button>
+      </form>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+  </details>
+  {% endfor %}
+
+  <section class="card p-5">
+    <h2 class="text-lg font-semibold">Run overstay check</h2>
+    <p class="mt-1 text-stone">Flags open sessions older than the limit as suspected abandoned (what <code>check_overstay</code> does).</p>
+    <form method="post" action="/dev/overstay" class="mt-4 flex flex-wrap items-center gap-3">
+      <label class="flex items-center gap-2">Limit
+        <input name="minutes" type="number" min="0" value="2" class="w-20 border border-stone-line rounded px-3 py-1.5"> minutes
+      </label>
+      <button class="btn-small">Run overstay check</button>
+    </form>
+  </section>
+
+  <section class="card p-5">
+    <h2 class="text-lg font-semibold">Open commands sent</h2>
+    {% if published %}
+    <ul class="mt-3 space-y-1 font-mono text-sm">
+      {% for lot_id, payload in published %}<li>{{ lot_id }} ← {{ payload | tojson }}</li>{% endfor %}
+    </ul>
+    {% else %}<p class="mt-2 text-stone">None yet.</p>{% endif %}
+  </section>
+
+  <p class="text-stone">Accounts: <code>officer</code> / <code>officer1</code>, <code>alice</code> / <code>alice123</code>. <a href="/" class="text-teal underline underline-offset-2">Map</a> · <a href="/officer" class="text-teal underline underline-offset-2">Officer console</a></p>
+</main>
+{% endblock %}

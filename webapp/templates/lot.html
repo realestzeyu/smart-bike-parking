@@ -1,0 +1,72 @@
+{% extends "_phone.html" %}
+{# J2-J5. state: free | locked | mine | released | in_use (set in pages/lot.py) #}
+{% set n = lot.id | lot_number %}
+{% set map_at = {"lat": space.lat, "lng": space.lng, "label": "Lot " ~ n, "level": "ok" if state == "free" else "full"} %}
+{% set back_href = "/#" ~ space.id %}
+{% set back_label = "Back to the station" %}
+{% block title %}Lot {{ n }} · {{ space.address }}{% endblock %}
+{% block sheet %}
+<p class="mt-5 text-stone">{{ space.address }}</p>
+<h1 class="mt-1 text-2xl font-semibold">Lot {{ n }}</h1>
+
+{% macro sent_line() %}
+{% if sent %}
+<p class="mt-5 flex items-center gap-2 rounded bg-teal-soft text-teal px-4 py-3" role="status">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>
+  Open signal sent to lot {{ n }} at {{ sent }}
+</p>
+{% endif %}
+{% endmacro %}
+
+{% if state == "free" %}
+  <p class="mt-6 flex items-center gap-2 text-lg"><span class="dot bg-teal"></span>This lot is free</p>
+  {% if not lot.bike_present %}
+  <p class="mt-4 rounded bg-amber-soft text-amber px-4 py-3">No bike detected yet. Put your bike in the lot first.</p>
+  {% endif %}
+  <form method="post" action="/lot/{{ lot_ref }}/use" class="mt-auto pt-8">
+    <button class="btn-primary w-full">Use this lot</button>
+    {% if not user %}<p class="mt-3 text-stone">You'll log in or create an account first.</p>{% endif %}
+  </form>
+
+{% elif state == "locked" %}
+  <h2 class="mt-6 text-xl font-semibold text-teal">Lock released</h2>
+  <p class="mt-2 text-lg">Wrap the cable through your wheel and push it in until it clicks.</p>
+  {{ sent_line() }}
+  <p class="mt-4 text-stone">Your parking started at {{ session.start_time | sgt_time }}. When you come back, scan this QR code again to unlock.</p>
+  <div class="mt-auto pt-8">
+    <a href="/lot/{{ lot_ref }}" class="btn-primary w-full">Done, my bike is locked</a>
+    <form method="post" action="/lot/{{ lot_ref }}/open" class="mt-4 text-stone">
+      Cable didn't come out? <button class="text-teal font-semibold underline underline-offset-2">Release again</button>
+    </form>
+  </div>
+
+{% elif state == "mine" %}
+  <p class="mt-6 text-lg">Your bike is parked here since <strong class="font-semibold">{{ session.start_time | sgt_time }}</strong>.</p>
+  <p class="mt-1 text-stone">Parked for {{ session.start_time | parked_for }}</p>
+  <form method="post" action="/lot/{{ lot_ref }}/unlock" class="mt-auto pt-8">
+    <button class="btn-primary w-full">Unlock</button>
+  </form>
+
+{% elif state == "released" %}
+  <h2 class="mt-6 text-xl font-semibold text-teal">Unlocked</h2>
+  <p class="mt-2 text-lg">Please take your bike and push the cable back in.</p>
+  {{ sent_line() }}
+  <div class="mt-auto pt-8">
+    <a href="/" class="btn-primary w-full">Done</a>
+    <form method="post" action="/lot/{{ lot_ref }}/open" class="mt-4 text-stone">
+      Lock didn't open? <button class="text-teal font-semibold underline underline-offset-2">Unlock again</button>
+    </form>
+  </div>
+
+{% else %}
+  <p class="mt-6 flex items-center gap-2 text-lg"><span class="dot bg-stone"></span>This lot is in use.</p>
+  <p class="mt-2 text-stone"><a href="/#{{ space.id }}" class="text-teal underline underline-offset-2">See other free lots</a></p>
+{% endif %}
+
+{% if user %}
+<form method="post" action="/logout" class="mt-6 text-stone">
+  Logged in as {{ user.name }} · <button class="text-teal underline underline-offset-2">Log out</button>
+  <input type="hidden" name="next" value="/lot/{{ lot_ref }}">
+</form>
+{% endif %}
+{% endblock %}

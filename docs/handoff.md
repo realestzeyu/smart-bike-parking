@@ -53,6 +53,8 @@ Building with **Claude Code** in the repo.
 | `smart-bicycle-parking.drawio` (user's copy) | Outdated. **Don't edit until asked.** Fix list in section 11 |
 | Sequence page of the .drawio | Still the old NFC flow. Needs a full redraw |
 | Repo files (CLAUDE.md, docs, .gitignore, skeleton) | Written 6 Nov |
+| Web app (`webapp/`) | Built 10 Nov: journeys J1–J8 work in fake mode; AWS mode written, not yet run against AWS. Guide: `webapp/README.md` |
+| Starting data | `webapp/load_starting_data.py`: space1 (real lot) + 3 simulated stations + officer; not yet run |
 
 ## 4. Architecture
 
@@ -81,8 +83,8 @@ Building with **Claude Code** in the repo.
 
 | Lambda | Trigger | Does |
 |---|---|---|
-| `handle_event` | IoT Rule 1 | Updates `bikePresent`; `releasing` → `free` on `bike_left`; records `opened` confirmations; logs tamper + Telegram to the owner |
-| `check_overstay` | EventBridge Scheduler, 1 min demo / 15 min deployment | Open sessions over the limit → Telegram to the owner once; sets `overstayNotifiedAt` (dashboard shows it) |
+| `handle_event` | IoT Rule 1 | Updates `bike_present`; `releasing` → `free` on `bike_left`; logs tamper (with `lot_id`) + Telegram to the owner |
+| `check_overstay` | EventBridge Scheduler, 1 min demo / 15 min deployment | Open sessions over the limit → Telegram to the owner once; sets `overstay_notified_at` (officer console shows it) |
 | `handle_offline` | IoT Rule 2 | **KIV.** Marks a space offline so the web app can warn before sending an unlock |
 
 - **Telegram:** one bot, one-way, `sendMessage` only from Lambdas. No webhook.
@@ -93,14 +95,14 @@ Building with **Claude Code** in the repo.
 ### Telegram linking (at sign-up)
 1. Web app shows "Connect Telegram" → `t.me/<BotName>?start=<one-time-code>` → cyclist taps Start.
 2. Cyclist returns and taps "Done".
-3. Web app calls `getUpdates`, finds the code, saves `telegramChatId`.
+3. Web app calls `getUpdates`, finds the code, saves `telegram_chat_id`.
 
 ### Web app (FastAPI + HTML pages, one app)
-- Routes: `/` public, `/lot/{lot_ref}` cyclist, `/login`, `/signup`, `/forgot-password`, `/connect-telegram`, `/officer`, `/dev` (fake mode only).
+- Routes: `/` map of stations (+ station sheet), `/lot/{lot_ref}` QR lot page, `/profile`, `/login`, `/signup`, `/connect-telegram`, `/officer`, `/dev` (fake mode only). No forgot-password page (PoC).
 - Reads/writes DynamoDB and publishes `open` with boto3. Laptop: AWS profile `sbp-webapp`; EC2: IAM role.
 - **Login:** username + password checked by **Amazon Cognito** (`initiate_auth`, server-side); the result is kept in a signed session cookie (`SessionMiddleware`, `SESSION_SECRET`), so repeat QR scans stay logged in.
 - **Fake/real backend switch** (`BACKEND=fake|aws`): all AWS calls in `webapp/backend/`, so pages can be built before AWS exists.
-- **Confirmation:** after publishing `open`, polls the locks table for its `requestId` (up to ~8 s).
+- **No unlock confirmation (KIV):** after `open` the page shows "Open signal sent … at 14:52:03" with Release again / Unlock again; the lot frees on IR `bike_left`.
 - Refresh: HTMX polling.
 - **Hosting:** demo on the laptop (uvicorn, `host=0.0.0.0`, port 8000); phone on the same hotspot. EC2 shown as deployment target.
 
@@ -108,7 +110,7 @@ Building with **Claude Code** in the repo.
 
 - **Sensor event:** sensor → ESP32 (state change) → MQTT/TLS `space1/lot3/event` → IoT Core → Rule 1 → `handle_event` → DynamoDB (+ Telegram if tamper)
 - **Open command:** phone → web app → DynamoDB → IoT Core publish `space1/lot3/cmd` → ESP32 relay → `opened` event → `handle_event` writes confirmation → web app sees it
-- **Overstay:** EventBridge → `check_overstay` → open sessions → Telegram + `overstayNotifiedAt`
+- **Overstay:** EventBridge → `check_overstay` → open sessions → Telegram + `overstay_notified_at`
 - **Telegram linking:** cyclist → bot (`/start code`) → web app `getUpdates` → users table
 - **Public/officer pages:** browser → web app → boto3 → DynamoDB
 - **Space offline (KIV):** ESP32 drops → Last Will → Rule 2 → `handle_offline`
@@ -127,9 +129,9 @@ Scan any QR → sign up → Connect Telegram.
 ### Flow (HelloRide style + slanted bolt)
 **Vacant:** cable clicked in, lot `free`.
 
-**Lock:** park (IR → `bike_arrived`) → scan QR → log in if needed → "Use this lot" → web app claims the lot (`taken`), opens a session, publishes `open` → relay pulses → `opened` confirmed → cyclist wraps cable and clicks it in. No confirmation → claim undone, "try again".
+**Lock:** park (IR → `bike_arrived`) → scan QR → log in if needed → "Use this lot" → web app claims the lot (`taken`), opens a session, publishes `open` → relay pulses → cyclist wraps cable and clicks it in → **Done** (or **Release again** if the cable didn't come out).
 
-**Unlock:** scan QR → page sees the owner → "Unlock" → `open` → confirmed → status `releasing`, session closed → cyclist takes bike, clicks cable back → IR `bike_left` → `handle_event` sets `free`.
+**Unlock:** scan QR → page sees the owner → "Unlock" → status `releasing`, session closed, `open` sent → "Unlocked" (**Unlock again** if needed) → cyclist takes bike, clicks cable back → IR `bike_left` → `handle_event` sets `free`.
 
 **Someone else scans a taken lot:** "Lot in use". No command.
 
@@ -139,10 +141,10 @@ Scan any QR → sign up → Connect Telegram.
 
 | Situation | Handling |
 |---|---|
-| ESP32 Wi-Fi down | No `opened` → "couldn't reach the lock" → claim undone / nothing changed → officer manual release. Events not buffered |
+| ESP32 Wi-Fi down | Command lost and the app can't tell (unlock confirmation KIV) → cyclist asks staff → officer Force unlock / manual release. Events not buffered |
 | Late command after reconnect | ESP32 ignores expired `open` |
 | Two users tap "Use this lot" at once | Conditional write: only the first succeeds |
-| Forgot password | "Forgot password?" → Cognito emails a code → set a new one (cyclists and officers) |
+| Forgot password | No self-service page in the PoC: officer verifies the person and resets it (`admin_set_user_password`) |
 | Lost phone / no access to email | Officer verifies in person → Force unlock, and resets the password (`admin_set_user_password`) |
 | Telegram not connected | No alerts; still visible on officer dashboard |
 | Cable not clicked back in | Harmless; undetectable (no microswitch) |
@@ -167,8 +169,8 @@ Scan any QR → sign up → Connect Telegram.
 | Microswitch | Not used | Latch switch | Simpler; IR confirms bike |
 | Filtering | Edge (state changes only) | Raw readings | Saves data, messages, Lambda calls, DB writes |
 | API layer | None | API Gateway | Web app uses boto3 server-side |
-| Unlock confirmation (changed 7 Nov) | IR `bike_left` confirms the unlock (lot stays `releasing` until then, owner can resend); claim has Retry / Cancel | ESP32 echoes `requestId` in an `opened` event; web app subscribes to MQTT | Uses the sensor we already have; no extra field or message; boto3 can only publish |
-| Free-lot count (changed 7 Nov) | Count `free` lots from one `Query(spaceId)` on `sbp-locks` | Atomic `freeLots` counter | Same single query also gives per-lot availability; no counter to drift on undo. At scale: add a sparse index on `status` |
+| Unlock confirmation (changed 7 Nov) | IR `bike_left` frees the lot (it stays `releasing` until then; owner can press Unlock again); after a claim: Release again, no Cancel. Direct "lock opened" confirmation stays KIV | ESP32 echoes `requestId` in an `opened` event; web app subscribes to MQTT | Uses the sensor we already have; no extra field or message; boto3 can only publish |
+| Free-lot count (changed 7 Nov) | Count `free` lots from one `Query(space_id)` on `sbp-lots` | Atomic `freeLots` counter | Same single query also gives per-lot availability; no counter to drift on undo. At scale: add a sparse index on `status` |
 | Session history | Keep every session (`sbp-sessions`) | Track only the current parking on the lock | Authority views usage patterns per lot, durations, suspected abandoned bikes |
 | Alerts sent from | The detecting Lambda | DynamoDB Streams | Fewer parts |
 | Dashboard updates | Polling | WebSockets | Far fewer parts |
@@ -224,15 +226,17 @@ Reviewed against the slide "Architecture and data flow" on 7 Nov.
 - **Can a thief cut the cable / shake the lock?** SW-420 → tamper alert with exact time for CCTV; logged for officers.
 - **Doesn't the sensor flood the cloud?** Edge filtering: only state changes.
 - **Where's your API layer?** None needed: web app talks to AWS server-side; Lambdas are triggered by IoT Rules and EventBridge.
-- **How do you know the lock actually opened?** On unlock, the IR sensor reports the bike leaving; until then the lot stays "releasing" and the owner can retry, and after ~2 min staff are called. When locking, the cyclist sees the cable come free and can retry or cancel.
+- **How do you know the lock actually opened?** The app doesn't confirm it yet (KIV). The cyclist sees the cable come free and can press Release again / Unlock again; the lot only frees when the IR sensor reports the bike leaving. If the lock never opens, staff Force unlock.
 - **What if two people grab the same lot?** Conditional database write; only one wins.
-- **How does it scale?** Serverless pieces scale with lots; one summary item per space; a new space is a Terraform change.
+- **How does it scale?** Serverless pieces scale with lots; a new space is a Terraform change plus its starting-data rows.
 - **How would you deploy it?** Terraform rebuilds the whole backend in minutes; web app moves to EC2.
 - **vs SecureMyBike / shared bikes?** Free, nothing to carry, far cheaper per bike space, also handles abandoned bikes and availability.
 
 ## 13. Still to do
 
-1. Teammate reviews `agreed-names-and-formats.md` and settles its open items.
+1. Teammate reviews `agreed-names-and-formats.md` (incl. the "Web app as built" notes) and settles its open items.
+1. Deploy infra, fill `webapp/.env`, run `load_starting_data.py`, then test the web app with `BACKEND=aws`.
+1. Real Lambda logic (`handle_event`, `check_overstay`).
 2. **Lock mechanism (KIV):** check bolt shape.
 3. **`handle_offline` (KIV):** build or leave out.
 4. Overstay threshold for deployment (e.g. 3 days).
