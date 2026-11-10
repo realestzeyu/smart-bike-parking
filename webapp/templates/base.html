@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{% block title %}Bicycle Parking{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script>
+    // Tokens from webapp/design/DESIGN.md
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            teal: { DEFAULT: '#0F766E', soft: '#E3F1EF' },
+            amber: { DEFAULT: '#B45309', soft: '#FDF3E7' },
+            alert: { DEFAULT: '#B91C1C', soft: '#FBE9E9' },
+            stone: { DEFAULT: '#6B6A63', line: '#E4E2DC' },
+            ground: '#EEF0EA',
+            page: '#F6F5F1',
+            ink: '#1F1F1C',
+          },
+          fontFamily: {
+            sans: ['"IBM Plex Sans"', 'system-ui', 'sans-serif'],
+            mono: ['"IBM Plex Mono"', 'ui-monospace', 'monospace'],
+          },
+          borderRadius: { DEFAULT: '10px' },
+        },
+      },
+    };
+  </script>
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+  <link rel="stylesheet" href="/static/app.css">
+  {% block head %}{% endblock %}
+</head>
+<body class="bg-page text-ink font-sans antialiased">
+  {% block body %}{% endblock %}
+</body>
+</html>

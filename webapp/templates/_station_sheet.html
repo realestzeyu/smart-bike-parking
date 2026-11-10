@@ -1,0 +1,44 @@
+{# Station sheet (mockup "App station details"). Re-fetches itself every 5 s. #}
+{% set colour = {"ok": "text-teal", "few": "text-amber", "full": "text-stone"}[s.level] %}
+{% set bar = {"ok": "bg-teal", "few": "bg-amber", "full": "bg-stone"}[s.level] %}
+<div id="station-sheet" class="min-h-full flex flex-col px-5 pt-3 pb-6"
+     hx-get="/space/{{ s.id }}/sheet" hx-trigger="every 5s" hx-swap="outerHTML">
+  <div class="handle"></div>
+
+  <h2 class="mt-5 text-2xl font-semibold">{{ s.address }}</h2>
+  <p class="mt-1 text-stone">Bicycle rack · {{ s.metres }} m away · {{ s.walk_min }} min walk</p>
+
+  <div class="mt-6 flex items-end justify-between gap-3">
+    <p class="flex items-baseline gap-3">
+      <span class="text-6xl font-bold leading-none {{ colour }}">{{ s.free }}</span>
+      <span class="text-lg">of {{ s.total }} lot{{ "" if s.total == 1 else "s" }} free</span>
+    </p>
+    <span class="shrink-0 rounded-full bg-teal-soft text-teal px-3 py-1.5 text-sm">Live</span>
+  </div>
+
+  <div class="mt-5 h-2.5 rounded-full bg-stone-line overflow-hidden" role="progressbar"
+       aria-valuemin="0" aria-valuemax="{{ s.total }}" aria-valuenow="{{ s.free }}" aria-label="Lots free">
+    <div class="h-full rounded-full {{ bar }}" style="width: {{ (100 * s.free / s.total) if s.total else 0 }}%"></div>
+  </div>
+
+  <h3 class="mt-7 font-semibold">Lot status</h3>
+  <ul class="mt-3 grid grid-cols-10 gap-2">
+    {% for lot in s.lots %}
+    {% set free = lot.status == "free" %}
+    <li class="aspect-square rounded grid place-items-center text-sm font-semibold border-2
+               {{ 'border-teal text-teal' if free else 'border-stone bg-stone text-white' }}"
+        aria-label="Lot {{ lot.id | lot_number }}, {{ 'free' if free else 'occupied' }}">{{ lot.id | lot_number }}</li>
+    {% endfor %}
+  </ul>
+  <ul class="mt-4 flex gap-6 text-stone">
+    <li class="flex items-center gap-2"><span class="h-4 w-4 rounded-sm border-2 border-teal"></span>Free</li>
+    <li class="flex items-center gap-2"><span class="h-4 w-4 rounded-sm bg-stone"></span>Occupied</li>
+  </ul>
+
+  <a href="https://www.google.com/maps/dir/?api=1&destination={{ s.lat }},{{ s.lng }}&travelmode=walking"
+     target="_blank" rel="noopener"
+     class="mt-auto pt-0 flex items-center justify-center gap-3 rounded-full bg-teal text-white text-lg font-semibold py-4 hover:bg-[#0c625b]">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l7 19-7-4-7 4z"/></svg>
+    Get directions
+  </a>
+</div>

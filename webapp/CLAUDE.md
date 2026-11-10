@@ -8,6 +8,8 @@ One FastAPI app (Jinja2 templates, Tailwind, HTMX, Leaflet) with three parts: **
 
 Table names, fields, status rules, payloads and settings: **`../docs/agreed-names-and-formats.md`**. Follow it exactly; don't add fields without updating it.
 
+Visual design: **`design/DESIGN.md`**. Every page follows it; the mockups in `design/` are the spec.
+
 ## Pages (routes)
 | Route | Who | Does |
 |---|---|---|

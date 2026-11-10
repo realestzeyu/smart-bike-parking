@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Find a bicycle lot{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endblock %}
+{% block body %}
+<div id="map" class="fixed inset-0 bg-ground" aria-label="Map of bicycle parking stations"></div>
+
+<button id="back" type="button" class="map-control fixed top-5 left-4 z-[1000] h-12 w-12 rounded-full bg-white border border-stone-line grid place-items-center" aria-label="Back to all stations">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+</button>
+
+<button id="locate" type="button" class="map-control fixed right-4 bottom-[200px] z-[1000] h-12 w-12 rounded-full bg-white border border-stone-line grid place-items-center" aria-label="Show my position">
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>
+</button>
+
+<!-- Overview sheet: shown with the tab bar until a station is tapped -->
+<section id="overview" class="sheet fixed inset-x-0 bottom-16 z-[1000] bg-white px-5 pt-3 pb-6">
+  <div class="handle"></div>
+  <h1 class="mt-4 text-xl font-semibold">{{ nearby }} station{{ "" if nearby == 1 else "s" }} within {{ nearby_m }} m</h1>
+  <ul class="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-stone">
+    <li class="flex items-center gap-2"><span class="dot bg-teal"></span>Available</li>
+    <li class="flex items-center gap-2"><span class="dot bg-amber"></span>Few left</li>
+    <li class="flex items-center gap-2"><span class="dot bg-stone"></span>Full</li>
+  </ul>
+</section>
+
+<!-- Station sheet: filled by HTMX from /space/{id}/sheet -->
+<section id="detail" class="sheet fixed inset-x-0 bottom-0 z-[1000] bg-white overflow-y-auto" aria-live="polite"></section>
+
+<nav class="tabbar fixed inset-x-0 bottom-0 z-[1000] h-16 bg-white border-t border-stone-line grid grid-cols-3 text-sm" aria-label="Main">
+  <a href="/" class="flex flex-col items-center justify-center gap-0.5 text-teal font-semibold" aria-current="page">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3z"/><path d="M9 3v15M15 6v15"/></svg>
+    Map
+  </a>
+  <span class="flex flex-col items-center justify-center gap-0.5 text-stone opacity-40" aria-disabled="true">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="6" cy="16" r="3.5"/><circle cx="18" cy="16" r="3.5"/><path d="M6 16l4-8h5l3 8M10 8l2 8h-6M9 5h3"/></svg>
+    My parking
+  </span>
+  <span class="flex flex-col items-center justify-center gap-0.5 text-stone opacity-40" aria-disabled="true">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>
+    Profile
+  </span>
+</nav>
+
+<script id="map-data" type="application/json">{{ {"you": you, "stations": stations} | tojson }}</script>
+<script src="/static/map.js"></script>
+{% endblock %}
