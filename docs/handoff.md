@@ -4,6 +4,13 @@ Full background and reasoning, for humans and for starting a new chat. Reflects 
 
 Exact table names, fields, topics and payloads live in **`agreed-names-and-formats.md`**. If this file and that one disagree, that one wins.
 
+**10 Nov 2026 update** (overrides anything below):
+- **Web app = FastAPI + HTML pages** (Jinja2, Tailwind, HTMX, Leaflet), port 8000. NiceGUI dropped: the target design (3 images in `webapp/design/`) needs full control of the look.
+- **ERD additions:** `space.lat` / `space.lng` (map pins); `tamper_event.lot_id` (always set, `session_id` optional, so tamper on a free lot is stored).
+- **Passwords stored as plaintext** in `user.password` (PoC only, no bcrypt).
+- **Starting data** (spaces, lots, officer account) loaded by `webapp/load_starting_data.py`: creates missing rows only, never overwrites. Not Terraform.
+- Older mentions below of an `opened` confirmation or camelCase field names are superseded by `agreed-names-and-formats.md`.
+
 Changes since 5 Nov:
 - **Web app = NiceGUI** (was Streamlit). Login persistence solved by `app.storage.user`; QR link format changed.
 - **Infrastructure as code = Terraform** (local state, region `ap-southeast-1`).
@@ -33,7 +40,7 @@ docs/handoff.md                  this file
 docs/agreed-names-and-formats.md tables, fields, topics, payloads, settings (DRAFT, teammate to review)
 infra/                           Terraform
 lambdas/handle_event/, lambdas/check_overstay/
-webapp/                          NiceGUI app + webapp/CLAUDE.md
+webapp/                          FastAPI app + webapp/CLAUDE.md
 simulator/                       fake ESP32 script
 firmware/                        ESP32 code (later)
 certs/                           device certs (gitignored)
@@ -50,7 +57,7 @@ Building with **Claude Code** in the repo.
 ## 4. Architecture
 
 ### Per lot
-- **QR sticker:** `http://<laptop-ip>:8080/lot/space1_lot3`. Identifies the lot only.
+- **QR sticker:** `http://<laptop-ip>:8000/lot/space1_lot3`. Identifies the lot only.
 - **IR obstacle sensor:** bike present (1 GPIO).
 - **SW-420 vibration sensor:** tamper (1 GPIO).
 - **3 V solenoid lock + relay:** relay switched by 1 GPIO.
@@ -80,7 +87,7 @@ Building with **Claude Code** in the repo.
 
 - **Telegram:** one bot, one-way, `sendMessage` only from Lambdas. No webhook.
 - **No API Gateway.**
-- **DynamoDB (5 tables, prefix `sbp-`):** locks, sessions (sparse `open-sessions` index), users, spaces (one summary item per space), tamper-events. Details in the agreed file.
+- **DynamoDB (5 tables, prefix `sbp-`):** `sbp-spaces` (address, lat, lng), `sbp-lots`, `sbp-users`, `sbp-sessions` (`by-lot` index), `sbp-tamper-events`. Details in the agreed file.
 - **IAM:** separate least-privilege IAM user for the web app (DynamoDB on these tables + `iot:Publish` on `space*/*/cmd` only).
 
 ### Telegram linking (at sign-up)
@@ -88,14 +95,14 @@ Building with **Claude Code** in the repo.
 2. Cyclist returns and taps "Done".
 3. Web app calls `getUpdates`, finds the code, saves `telegramChatId`.
 
-### Web app (NiceGUI, one app)
+### Web app (FastAPI + HTML pages, one app)
 - Routes: `/` public, `/lot/{lot_ref}` cyclist, `/login`, `/signup`, `/connect-telegram`, `/officer`, `/dev` (fake mode only).
 - Reads/writes DynamoDB and publishes `open` with boto3. Laptop: AWS profile `sbp-webapp`; EC2: IAM role.
-- **Login:** username + bcrypt hash, kept in `app.storage.user` (cookie signed with `storage_secret`), so repeat QR scans stay logged in.
+- **Login:** username + plaintext password (PoC only), kept in a signed session cookie (`SessionMiddleware`, `SESSION_SECRET`), so repeat QR scans stay logged in.
 - **Fake/real backend switch** (`BACKEND=fake|aws`): all AWS calls in `webapp/backend/`, so pages can be built before AWS exists.
 - **Confirmation:** after publishing `open`, polls the locks table for its `requestId` (up to ~8 s).
-- Refresh: `ui.timer` + `@ui.refreshable`.
-- **Hosting:** demo on the laptop (`host=0.0.0.0`, port 8080); phone on the same hotspot. EC2 shown as deployment target.
+- Refresh: HTMX polling.
+- **Hosting:** demo on the laptop (uvicorn, `host=0.0.0.0`, port 8000); phone on the same hotspot. EC2 shown as deployment target.
 
 ## 5. Data flows
 
@@ -148,10 +155,10 @@ Scan any QR → sign up → Connect Telegram.
 |---|---|---|---|
 | Controller | ESP32 only | Raspberry Pi gateway | Cheaper, low power, Wi-Fi built in. Trade-off: no offline buffer, limited GPIO |
 | Cyclist interface | Own web app + simple login | Telegram bot buttons; NFC cards | One app for cyclists, public, officers |
-| Web framework | NiceGUI | Streamlit; FastAPI + React template; FastAPI + hand-written HTML | Python only; persistent login via cookie built in; page-per-route suits the QR flow; Streamlit forgets sessions per tab; React template is overkill and assumes PostgreSQL |
+| Web framework (changed 10 Nov) | FastAPI + Jinja2 + Tailwind + HTMX + Leaflet | NiceGUI; Streamlit; FastAPI + React template | Target design needs full control of the look; Streamlit forgets sessions per tab; React template is overkill and assumes PostgreSQL |
 | IaC | Terraform | CloudFormation/SAM; console clicks | Teammate's suggestion, transferable skill, generates the IoT cert; one-command rebuild and teardown |
 | Repo | One repo | Separate repos | Shared names change together; small team |
-| Login | Username + bcrypt | Google OIDC; PIN per lock | Simplest for a PoC. Production: Singpass/Google |
+| Login (changed 10 Nov) | Username + plaintext password | bcrypt; Google OIDC; PIN per lock | Simplest for a PoC. Production: hashed passwords / Singpass/Google |
 | Cyclist alerts | Telegram, one-way | Web push; SMS | A web page can't alert a closed phone; free and instant |
 | Telegram linking | One-time code + `getUpdates` | Webhook Lambda | No inbound endpoint |
 | Officer view | Officer-only dashboard | Telegram group | Many lots; tamper log, overstays, Force unlock |
@@ -193,7 +200,7 @@ Reviewed against the slide "Architecture and data flow" on 7 Nov.
 - MQTT arrow → "MQTT over TLS, X.509 cert (Wi-Fi / hotspot; 4G router in deployment)", events ↑ / commands ↓.
 - Add **overstay Lambda → Telegram** (only the events Lambda is connected, but the label says "tamper, overstay").
 - DynamoDB box → "locks, sessions (usage history), users, spaces, tamper-events".
-- **Two EC2 boxes (Public / Government Website):** recommended merge into one "Web app (NiceGUI): cyclist / public / officer pages. Laptop for demo, EC2 in deployment", with arrows to Cyclist and Officer and one Lock/Unlock arrow to IoT Core. Terraform creates no EC2. If kept as two, add Government Website → IoT Core "Force unlock".
+- **Two EC2 boxes (Public / Government Website):** recommended merge into one "Web app (FastAPI): cyclist / public / officer pages. Laptop for demo, EC2 in deployment", with arrows to Cyclist and Officer and one Lock/Unlock arrow to IoT Core. Terraform creates no EC2. If kept as two, add Government Website → IoT Core "Force unlock".
 - "Lot units 2–10" → "Lot units 2–N". Each lot needs 3 GPIO (IR, SW-420, relay); one ESP32 realistically handles ~6–8 lots.
 - Lot unit → "QR sticker, IR, SW-420, 3 V solenoid + relay (2× AA)".
 

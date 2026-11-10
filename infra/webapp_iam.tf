@@ -1,4 +1,4 @@
-# Least-privilege IAM user for the NiceGUI web app (AWS profile "sbp-webapp" on the laptop).
+# Least-privilege IAM user for the FastAPI web app (AWS profile "sbp-webapp" on the laptop).
 # DynamoDB on the 5 tables + indexes, and iot:Publish on command topics only.
 
 resource "aws_iam_user" "webapp" {

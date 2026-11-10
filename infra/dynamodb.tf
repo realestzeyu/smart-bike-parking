@@ -77,7 +77,7 @@ resource "aws_dynamodb_table" "sessions" {
   }
 }
 
-# Tamper log. Key: id (UUID). Each event belongs to a session (session_id).
+# Tamper log. Key: id (UUID). Has lot_id; session_id optional.
 resource "aws_dynamodb_table" "tamper_events" {
   name         = "${local.prefix}-tamper-events"
   billing_mode = "PAY_PER_REQUEST"
