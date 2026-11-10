@@ -1,5 +1,7 @@
 # Least-privilege IAM user for the FastAPI web app (AWS profile "sbp-webapp" on the laptop).
-# DynamoDB on the 5 tables + indexes, and iot:Publish on command topics only.
+# DynamoDB on the 5 tables + indexes, iot:Publish on command topics only, and the few Cognito
+# admin calls the app needs (confirm sign-ups; starting-data script creates the officer).
+# SignUp, InitiateAuth, ForgotPassword, ConfirmForgotPassword on the public client need no IAM permission.
 
 resource "aws_iam_user" "webapp" {
   name = "${local.prefix}-webapp"
@@ -33,6 +35,17 @@ resource "aws_iam_user_policy" "webapp" {
         Effect   = "Allow"
         Action   = "iot:Publish"
         Resource = "arn:aws:iot:${local.region}:${local.account_id}:topic/space*/*/cmd"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:AdminConfirmSignUp",        # confirm a new sign-up (no verification email)
+          "cognito-idp:AdminUpdateUserAttributes", # mark the sign-up email as verified (for resets)
+          "cognito-idp:AdminCreateUser",           # starting-data script: officer account
+          "cognito-idp:AdminSetUserPassword",      # starting-data script; officer password resets
+          "cognito-idp:AdminGetUser",
+        ]
+        Resource = aws_cognito_user_pool.users.arn
       },
     ]
   })

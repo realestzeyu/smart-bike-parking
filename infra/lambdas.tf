@@ -24,14 +24,14 @@ locals {
     check_overstay = {
       timeout = 30
       env     = { OVERSTAY_LIMIT_MINUTES = tostring(var.overstay_limit_minutes) }
-      # Scans lots for taken ones, reads/flags their current session, reads the owner's telegram_chat_id.
+      # Queries the open-sessions index, sets overstay_notified_at, reads the owner's telegram_chat_id.
       statements = [
         {
-          actions   = ["dynamodb:Scan"]
-          resources = [aws_dynamodb_table.lots.arn]
+          actions   = ["dynamodb:Query"]
+          resources = ["${aws_dynamodb_table.sessions.arn}/index/open-sessions"]
         },
         {
-          actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
+          actions   = ["dynamodb:UpdateItem"]
           resources = [aws_dynamodb_table.sessions.arn]
         },
         {

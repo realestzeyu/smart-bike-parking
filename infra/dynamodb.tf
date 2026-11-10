@@ -43,7 +43,7 @@ resource "aws_dynamodb_table" "users" {
 }
 
 # One item per parking session (usage archive). Key: id (UUID).
-# The current session of a lot is lot.session_id; history per lot uses the by-lot index.
+# The current session of a lot is lot.session_id.
 resource "aws_dynamodb_table" "sessions" {
   name         = "${local.prefix}-sessions"
   billing_mode = "PAY_PER_REQUEST"
@@ -58,6 +58,14 @@ resource "aws_dynamodb_table" "sessions" {
     type = "S"
   }
   attribute {
+    name = "user_id"
+    type = "S"
+  }
+  attribute {
+    name = "is_open"
+    type = "S"
+  }
+  attribute {
     name = "start_time"
     type = "S"
   }
@@ -68,6 +76,35 @@ resource "aws_dynamodb_table" "sessions" {
     projection_type = "ALL"
     key_schema {
       attribute_name = "lot_id"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "start_time"
+      key_type       = "RANGE"
+    }
+  }
+
+  # Query(user_id) = a cyclist's "my parking history".
+  global_secondary_index {
+    name            = "by-user"
+    projection_type = "ALL"
+    key_schema {
+      attribute_name = "user_id"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "start_time"
+      key_type       = "RANGE"
+    }
+  }
+
+  # Sparse: only open sessions carry is_open = "Y" (removed on close), so only they
+  # appear here. Query(is_open = "Y") = open sessions / abandoned-bike check.
+  global_secondary_index {
+    name            = "open-sessions"
+    projection_type = "ALL"
+    key_schema {
+      attribute_name = "is_open"
       key_type       = "HASH"
     }
     key_schema {

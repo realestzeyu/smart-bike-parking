@@ -4,11 +4,17 @@ What the web app side and the AWS side have agreed on: tables and fields, who wr
 
 **Status: updated 10 Nov 2026.** Items marked **[?]** need a decision.
 
+**Schema review (10 Nov, AWS side):**
+- **`session.is_open`** (`"Y"` while open, **removed** on close) + sparse GSI **`open-sessions`** (`is_open` + `start_time`): open sessions / abandoned bikes without scanning the whole table. `check_overstay` now queries this index.
+- **GSI `by-user`** on sessions (`user_id` + `start_time`): "my parking history".
+- **`notified_overstay` → `overstay_notified_at`** (still a datetime; name now says what it holds).
+- **Login moves to Amazon Cognito.** `user.password` is **removed**: Cognito stores the password; `sbp-users` keeps the profile, `role` and `telegram_chat_id`. Cognito username = `user.id`. Self-service **forgot password** by emailed code for both roles. See "Login (Cognito)" in section 2.
+
 **What changed on 10 Nov 2026:**
 - **Web app = FastAPI + HTML pages** (Jinja2, Tailwind, HTMX, Leaflet), port 8000. NiceGUI is dropped.
 - **`space.lat` / `space.lng`** added (map pins).
 - **`tamper_event.lot_id`** added (always set); `session_id` is now optional, so **tamper on a free lot is stored** too.
-- **`user.password_hash` → `user.password`, plaintext (PoC only, no bcrypt).** Demo accounts must use throwaway passwords.
+- ~~`user.password_hash` → `user.password`, plaintext~~ (superseded the same day by Cognito, above).
 - **Starting data** (spaces, lots, officer account) is loaded by **`webapp/load_starting_data.py`**, not Terraform (section 2).
 - Web app `.env`: `STORAGE_SECRET` → `SESSION_SECRET`.
 
@@ -66,17 +72,17 @@ erDiagram
         string id PK "sbp-users: login username"
         string name
         string email
-        string password "plaintext (PoC only)"
         string role "cyclist | officer"
         number telegram_chat_id "optional; set by Connect Telegram"
     }
     SESSION {
         string id PK "sbp-sessions: UUID"
         string lot_id FK "index by-lot (with start_time)"
-        string user_id FK "who parked"
+        string user_id FK "index by-user (with start_time)"
         datetime start_time
         datetime end_time "missing while open"
-        datetime notified_overstay "suspected abandoned flag"
+        string is_open "Y while open, removed on close; index open-sessions"
+        datetime overstay_notified_at "suspected abandoned flag"
     }
     TAMPER_EVENT {
         string id PK "sbp-tamper-events: UUID"
@@ -118,15 +124,39 @@ Key: `id` (S) = login username.
 | `id` | S | username, lowercase | web app |
 | `name` | S | display name | web app |
 | `email` | S | | web app |
-| `password` | S | **plaintext** (PoC only; use throwaway passwords) | web app |
 | `role` | S | `cyclist` / `officer` (officers created by the starting-data script, not sign-up) | web app / starting-data script |
 | `telegram_chat_id` | N | set after Connect Telegram; may be missing | web app |
 
-Lambdas only **read** `telegram_chat_id`.
+Lambdas only **read** `telegram_chat_id`. No password here: Cognito holds it.
+
+### Login (Cognito)
+User pool `sbp-users` (Terraform, `infra/cognito.tf`) holds **usernames, passwords and the email used for password resets**. Cognito username = `user.id` (lowercase, case-insensitive). Public app client (no secret), flow `USER_PASSWORD_AUTH`.
+
+The web app keeps its **own** `/signup`, `/login` and `/forgot-password` pages and calls Cognito server-side with boto3 (`cognito-idp`). No Cognito hosted login page (its callback must be HTTPS except on `localhost`; demo phones use `http://<laptop-ip>:8000`).
+
+**Role-based access:** Cognito answers *who* the user is; `sbp-users.role` answers *what they may do*. `cyclist` = self sign-up, cyclist pages. `officer` = government staff, created only by the starting-data script, officer dashboard + Force unlock (checked on every officer page load). Role is not stored in Cognito.
+
+| Action | Web app calls |
+|---|---|
+| Sign up (cyclists only) | `sign_up(ClientId, Username=id, Password, UserAttributes=[email])` → `admin_confirm_sign_up(UserPoolId, Username)` → `admin_update_user_attributes(UserPoolId, Username, [email_verified = "true"])` → put `sbp-users` item (`id`, `name`, `email`, `role = cyclist`). One step for the user, no email sent |
+| Log in (both roles) | `initiate_auth(ClientId, AuthFlow="USER_PASSWORD_AUTH", AuthParameters={USERNAME, PASSWORD})`; success → read `sbp-users` item → store `username`, `role` in the signed session cookie |
+| Wrong username or password | `NotAuthorizedException` (same error for both) |
+| Forgot password (both roles) | page 1: `forgot_password(ClientId, Username)` → Cognito emails a 6-digit code. Page 2: `confirm_forgot_password(ClientId, Username, ConfirmationCode, Password)` → back to login. Errors: `CodeMismatchException`, `ExpiredCodeException`, `LimitExceededException` |
+| Officer account | starting-data script: `admin_create_user` (`MessageAction="SUPPRESS"`, attributes `email` + `email_verified = "true"`) + `admin_set_user_password(Permanent=True)`, then `sbp-users` item with `role = officer` |
+| Fallback reset (no email access, lost phone) | officer verifies the person, then `admin_set_user_password` (AWS console: Cognito → user → Reset password also works) |
+
+Password rule: at least 8 characters. Tokens returned by `initiate_auth` aren't needed after login: the session cookie is enough.
+
+**Email notes:** sent by Cognito's built-in sender (`no-reply@verificationemail.com`, ~50/day, free); it can land in spam. The sign-up email is marked verified without a code (PoC shortcut, keeps sign-up one step): a mistyped email means reset codes go to the wrong address. Production: verify the email with a code at sign-up.
 
 ### `sbp-sessions`: one item per parking (the usage archive)
 Key: `id` (S, UUID). The open session of a lot is `lot.session_id`.
-GSI `by-lot`: `lot_id` + `start_time` → `Query(lot_id)` = that lot's usage history (newest first with `ScanIndexForward=false`).
+
+| Index | Keys | Query |
+|---|---|---|
+| `by-lot` | `lot_id` + `start_time` | that lot's usage history (newest first with `ScanIndexForward=false`) |
+| `by-user` | `user_id` + `start_time` | a cyclist's "my parking history" |
+| `open-sessions` | `is_open` + `start_time` | **sparse**: `Query(is_open = "Y")` = only open sessions (abandoned-bike check, officer view) |
 
 | Field | Type | Meaning | Written by |
 |---|---|---|---|
@@ -135,9 +165,10 @@ GSI `by-lot`: `lot_id` + `start_time` → `Query(lot_id)` = that lot's usage his
 | `user_id` | S | who parked | web app |
 | `start_time` | datetime | when the lot was claimed | web app |
 | `end_time` | datetime | set on unlock; missing while open | web app |
-| `notified_overstay` | datetime | when the overstay alert was sent = **suspected abandoned** flag | `check_overstay` |
+| `is_open` | S | `"Y"` while open; **removed** (not set to "N") when the session closes | web app |
+| `overstay_notified_at` | datetime | when the overstay alert was sent = **suspected abandoned** flag | `check_overstay` |
 
-Duration = `end_time − start_time`, computed when displayed. Open sessions / abandoned bikes for the console: Scan for no `end_time` (fine at prototype scale).
+Duration = `end_time − start_time`, computed when displayed.
 
 ### `sbp-tamper-events`: tamper log
 Key: `id` (S, UUID). Console Scans (small) and sorts by `detected_time`, newest first. Location comes from `lot_id`; owner (if any) from the session.
@@ -154,7 +185,7 @@ Key: `id` (S, UUID). Console Scans (small) and sorts by `detected_time`, newest 
 Loaded by **`webapp/load_starting_data.py`** (not Terraform). It only **creates rows that don't exist yet** and **never overwrites** an existing row (conditional put: `attribute_not_exists`), so it is safe to re-run against live data.
 - One `sbp-spaces` item per space (`id`, `address`, `lat`, `lng`).
 - One `sbp-lots` item per real lot (`status = free`, `bike_present = false`). Prototype: `space1`, 1 lot (`space1#lot1`).
-- One officer account (`role = officer`).
+- One officer account: Cognito user (`admin_create_user` + `admin_set_user_password`) + `sbp-users` item (`role = officer`). Skipped if it already exists.
 
 **[?]** Real address and coordinates for `space1`.
 
@@ -170,8 +201,8 @@ releasing ──(handle_event: bike_left = unlock confirmed)──▶ free
 
 | Change | Who | Writes (one `TransactWriteItems`) |
 |---|---|---|
-| free → taken | web app | lot: `status=taken`, `user_id`, `session_id`, **condition `status = free`** (fails → "Lot in use"); put session (`id`, `lot_id`, `user_id`, `start_time`) |
-| taken → releasing | web app | lot: `status=releasing` (keeps `user_id`, `session_id`); session: set `end_time` |
+| free → taken | web app | lot: `status=taken`, `user_id`, `session_id`, **condition `status = free`** (fails → "Lot in use"); put session (`id`, `lot_id`, `user_id`, `start_time`, `is_open = "Y"`) |
+| taken → releasing | web app | lot: `status=releasing` (keeps `user_id`, `session_id`); session: set `end_time`, **remove `is_open`** |
 | releasing → free | `handle_event` on `bike_left` | lot: `status=free`, remove `user_id`, `session_id` |
 
 The ESP32 only reports IR state changes; it **never** locks or decides anything on its own. The lock is closed by hand (cable clicked in); the solenoid only opens on the cloud's `open` command.
@@ -222,7 +253,7 @@ The ESP32 only reports IR state changes; it **never** locks or decides anything 
 - `tamper` → always write a tamper event with `lot_id`. If the lot has a `session_id`: also store it, Telegram to the owner (`lot.user_id`) if they have `telegram_chat_id`, set `notified`. Lot free (no session): event stored without `session_id`, no Telegram (`notified = false`).
 
 **`check_overstay`** (EventBridge Scheduler; demo every 1 min, deployment every 15 min)
-- Scan `sbp-lots` for `status = taken` (small table). For each: get the session `lot.session_id`; if `start_time` is older than `OVERSTAY_LIMIT_MINUTES` and there's no `notified_overstay`, Telegram to the owner and set `notified_overstay`.
+- Query `open-sessions` (`is_open = "Y"`, `start_time` < now − `OVERSTAY_LIMIT_MINUTES`). For each session without `overstay_notified_at`: Telegram to the owner, set `overstay_notified_at`.
 
 ---
 
@@ -233,14 +264,17 @@ The ESP32 only reports IR state changes; it **never** locks or decides anything 
 |---|---|
 | `iot_data_endpoint` (e.g. `xxxx-ats.iot.ap-southeast-1.amazonaws.com`) | `IOT_DATA_ENDPOINT` |
 | `table_prefix` (`sbp-`) | `TABLE_PREFIX` |
+| `cognito_user_pool_id` | `COGNITO_USER_POOL_ID` |
+| `cognito_client_id` | `COGNITO_CLIENT_ID` |
 | web app IAM access key + secret (sensitive) | AWS profile `sbp-webapp` on the laptop |
 
 ### Web app IAM permissions (least privilege)
 - DynamoDB: `GetItem`, `PutItem`, `UpdateItem`, `DeleteItem`, `Query`, `Scan` on the 5 tables and their indexes (transactions use these too).
 - IoT: `iot:Publish` on `arn:aws:iot:ap-southeast-1:<account>:topic/space*/*/cmd` only.
+- Cognito (user pool only): `AdminConfirmSignUp`, `AdminUpdateUserAttributes`, `AdminCreateUser`, `AdminSetUserPassword`, `AdminGetUser`. (`SignUp`, `InitiateAuth`, `ForgotPassword`, `ConfirmForgotPassword` need no IAM permission.)
 
 ### Web app `.env` (gitignored; see `webapp/.env.example`)
-`BACKEND`, `SESSION_SECRET`, `AWS_PROFILE`, `AWS_REGION`, `IOT_DATA_ENDPOINT`, `TABLE_PREFIX`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`
+`BACKEND`, `SESSION_SECRET`, `AWS_PROFILE`, `AWS_REGION`, `IOT_DATA_ENDPOINT`, `TABLE_PREFIX`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`
 
 ### Lambda environment variables (Terraform)
 `TABLE_PREFIX`, `TELEGRAM_BOT_TOKEN` (sensitive variable), `OVERSTAY_LIMIT_MINUTES` (demo `2`, deployment e.g. `4320` = 3 days)

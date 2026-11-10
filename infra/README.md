@@ -12,13 +12,14 @@ Tables, fields, topics and payloads are defined in [`../docs/agreed-names-and-fo
 
 | File | Creates |
 |---|---|
-| `dynamodb.tf` | 5 on-demand tables: `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions` (+ `by-lot` index for usage history), `sbp-tamper-events` |
+| `dynamodb.tf` | 5 on-demand tables: `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions` (+ `by-lot`, `by-user` and sparse `open-sessions` indexes), `sbp-tamper-events` |
 | `iot.tf` | For each parking space: an IoT thing (`space1`), its certificate (saved to `../certs/space1/`) and device policy. Plus a rule that sends every `<space>/<lot>/event` message to `handle_event` |
 | `lambdas.tf` | `sbp-handle-event` and `sbp-check-overstay` (Python 3.13), zipped from `../lambdas/`, each with its own least-privilege role and 7-day logs |
 | `scheduler.tf` | EventBridge Scheduler that runs `check_overstay` (every minute for the demo; can be switched off) |
-| `webapp_iam.tf` | IAM user `sbp-webapp`: DynamoDB on the 5 tables + `iot:Publish` on `space*/*/cmd` only |
+| `cognito.tf` | Cognito user pool `sbp-users` (Lite tier; usernames, passwords, reset email; emails only password-reset codes) and public app client `sbp-webapp` (`USER_PASSWORD_AUTH`) |
+| `webapp_iam.tf` | IAM user `sbp-webapp`: DynamoDB on the 5 tables, `iot:Publish` on `space*/*/cmd` only, and 5 Cognito admin calls on the user pool |
 | `budget.tf` | Monthly budget `sbp-monthly`: emails you at 80% of US$5 spent, or if the month is forecast to go over |
-| `outputs.tf` | Values you need afterwards (IoT endpoint, table names, web app key) |
+| `outputs.tf` | Values you need afterwards (IoT endpoint, table names, Cognito IDs, web app key) |
 | `variables.tf` | Settings you can change (see [Settings](#settings)) |
 
 No API Gateway, no EC2, no database server: nothing that bills by the hour. The web app runs on a laptop for the demo.
@@ -112,7 +113,7 @@ terraform validate            # checks the code
 terraform plan -out=tfplan    # shows what will be created; changes nothing
 terraform apply tfplan        # creates it (about 1 minute)
 ```
-A fresh account should show **`Plan: 29 to add, 0 to change, 0 to destroy`**.
+A fresh account should show **`Plan: 31 to add, 0 to change, 0 to destroy`**.
 
 Afterwards, `terraform output` prints the IoT endpoint, table names and Lambda names.
 
@@ -175,6 +176,8 @@ A brand-new key can take ~10 s to start working.
 | `AWS_REGION` | `ap-southeast-1` |
 | `IOT_DATA_ENDPOINT` | `terraform output -raw iot_data_endpoint` |
 | `TABLE_PREFIX` | `sbp-` |
+| `COGNITO_USER_POOL_ID` | `terraform output -raw cognito_user_pool_id` |
+| `COGNITO_CLIENT_ID` | `terraform output -raw cognito_client_id` |
 
 Send the web app key (`terraform output -raw webapp_access_key_id` / `webapp_secret_access_key`) to whoever runs the web app **privately**, never in git or a group chat.
 
@@ -219,7 +222,7 @@ Always read the plan before applying. Anything marked **destroy** or **must be r
 
 ## Cost
 
-Expected: **close to US$0/month** for the prototype, idle or in use. Everything is billed per use: DynamoDB on-demand (storage free up to 25 GB, fractions of a cent per thousand requests), Lambda and EventBridge Scheduler (inside the permanent free allowances even with a check every minute), IoT Core (cents), CloudWatch Logs (free up to 5 GB). IAM and the budget are free. The budget email is the safety net.
+Expected: **close to US$0/month** for the prototype, idle or in use. Everything is billed per use: DynamoDB on-demand (storage free up to 25 GB, fractions of a cent per thousand requests), Lambda and EventBridge Scheduler (inside the permanent free allowances even with a check every minute), IoT Core (cents), CloudWatch Logs (free up to 5 GB), Cognito Lite (free for the first 10,000 monthly active users). IAM and the budget are free. The budget email is the safety net.
 
 What *could* cost money: firmware sending raw sensor readings instead of state changes (~US$25–30/month per lot in IoT messages), or hosting the web app on EC2 (~US$10–15/month).
 
