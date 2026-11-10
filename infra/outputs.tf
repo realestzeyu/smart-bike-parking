@@ -15,6 +15,16 @@ output "table_names" {
   value = { for k, t in local.tables : k => t.name }
 }
 
+output "cognito_user_pool_id" {
+  description = "Web app COGNITO_USER_POOL_ID (not secret)."
+  value       = aws_cognito_user_pool.users.id
+}
+
+output "cognito_client_id" {
+  description = "Web app COGNITO_CLIENT_ID (public client, not secret)."
+  value       = aws_cognito_user_pool_client.webapp.id
+}
+
 output "lambda_names" {
   value = { for k, f in aws_lambda_function.fn : k => f.function_name }
 }

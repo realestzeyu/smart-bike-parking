@@ -4,7 +4,7 @@ One FastAPI app (Jinja2 templates, Tailwind, HTMX, Leaflet) with three parts: **
 
 > **7 Nov 2026: schema proposal updated** (still DynamoDB). Tables are now `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions`, `sbp-tamper-events` with `snake_case` fields; there is **no `opened` confirmation** any more (unlock is confirmed by IR `bike_left`; claim has Retry / Cancel). Notes further down may still use the old names; `../docs/agreed-names-and-formats.md` is the source of truth.
 
-> **10 Nov 2026:** NiceGUI → FastAPI. `space` gets `lat`/`lng`; `tamper_event` gets `lot_id`. `user.password` is **plaintext** (PoC only, no bcrypt). Starting data comes from `load_starting_data.py`. Target UI: 3 images in `design/`.
+> **10 Nov 2026:** NiceGUI → FastAPI. `space` gets `lat`/`lng`; `tamper_event` gets `lot_id`. ~~`user.password` plaintext~~ **→ login via Amazon Cognito (later on 10 Nov)**: `user.password` is removed; see "Login (Cognito)" in `../docs/agreed-names-and-formats.md`. Starting data comes from `load_starting_data.py`. Target UI: 3 images in `design/`.
 
 Table names, fields, status rules, payloads and settings: **`../docs/agreed-names-and-formats.md`**. Follow it exactly; don't add fields without updating it.
 
@@ -13,9 +13,10 @@ Table names, fields, status rules, payloads and settings: **`../docs/agreed-name
 |---|---|---|
 | `/` | anyone | Public: free lots per space (reads `sbp-spaces`), auto-refresh |
 | `/lot/{lot_ref}` | cyclist | Opened by the QR, e.g. `/lot/space1_lot3`. Shows lot state and the right action: **Use this lot** (free), **Unlock** (taken by me), "Lot in use" (taken by someone else) |
-| `/login`, `/signup` | anyone | Username + password. Redirect back to where the user came from (`?next=`) |
+| `/login`, `/signup` | anyone | Username + password (sign-up also asks for email; cyclists only). Redirect back to where the user came from (`?next=`) |
+| `/forgot-password` | anyone | Username → emailed code → new password (Cognito `forgot_password` / `confirm_forgot_password`) |
 | `/connect-telegram` | logged-in cyclist | Part of sign-up: open `t.me/<bot>?start=<code>`, then **Done** → `getUpdates` → save `telegram_chat_id`. Can be skipped and done later |
-| `/officer` | role = officer | Lock states, open sessions, overstays (`notified_overstay`), tamper log, occupancy, **Force unlock** |
+| `/officer` | role = officer | Lock states, open sessions, overstays (`overstay_notified_at`; open sessions via the `open-sessions` index), tamper log, occupancy, **Force unlock** |
 | `/dev` | only when `BACKEND=fake` | Buttons to simulate `bike_arrived`, `bike_left`, `tamper`, and "lock unreachable" per lot |
 
 QR link format: `http://<laptop-ip>:8000/lot/space1_lot3`.
@@ -25,7 +26,7 @@ QR link format: `http://<laptop-ip>:8000/lot/space1_lot3`.
 webapp/
   main.py            FastAPI app + SessionMiddleware(SESSION_SECRET), includes routes
   config.py          reads .env (python-dotenv)
-  auth.py            plaintext password check, current_user(), require_login(), require_officer()
+  auth.py            Cognito sign_up / initiate_auth (boto3), current_user(), require_login(), require_officer()
   telegram_link.py   one-time code + getUpdates lookup
   load_starting_data.py  creates space/lot rows + officer account if missing; never overwrites
   backend/
@@ -71,6 +72,6 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload   # laptop: http://localhos
 
 ## Don'ts
 - Don't commit `.env`.
-- Passwords are plaintext (PoC only): use throwaway demo passwords; never log them.
+- Passwords go only to Cognito: never store or log them. In `BACKEND=fake`, the fake backend checks passwords in memory instead.
 - Don't set a Telegram webhook (breaks `getUpdates`).
 - Don't trust the URL alone: the lot ref only says *which* lot; access comes from the logged-in user and the lock's owner.

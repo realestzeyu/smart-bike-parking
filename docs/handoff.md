@@ -7,7 +7,7 @@ Exact table names, fields, topics and payloads live in **`agreed-names-and-forma
 **10 Nov 2026 update** (overrides anything below):
 - **Web app = FastAPI + HTML pages** (Jinja2, Tailwind, HTMX, Leaflet), port 8000. NiceGUI dropped: the target design (3 images in `webapp/design/`) needs full control of the look.
 - **ERD additions:** `space.lat` / `space.lng` (map pins); `tamper_event.lot_id` (always set, `session_id` optional, so tamper on a free lot is stored).
-- **Passwords stored as plaintext** in `user.password` (PoC only, no bcrypt).
+- ~~Passwords stored as plaintext in `user.password`~~ → **login via Amazon Cognito** (later on 10 Nov): own pages, boto3 server-side; Cognito holds passwords.
 - **Starting data** (spaces, lots, officer account) loaded by `webapp/load_starting_data.py`: creates missing rows only, never overwrites. Not Terraform.
 - Older mentions below of an `opened` confirmation or camelCase field names are superseded by `agreed-names-and-formats.md`.
 
@@ -96,9 +96,9 @@ Building with **Claude Code** in the repo.
 3. Web app calls `getUpdates`, finds the code, saves `telegramChatId`.
 
 ### Web app (FastAPI + HTML pages, one app)
-- Routes: `/` public, `/lot/{lot_ref}` cyclist, `/login`, `/signup`, `/connect-telegram`, `/officer`, `/dev` (fake mode only).
+- Routes: `/` public, `/lot/{lot_ref}` cyclist, `/login`, `/signup`, `/forgot-password`, `/connect-telegram`, `/officer`, `/dev` (fake mode only).
 - Reads/writes DynamoDB and publishes `open` with boto3. Laptop: AWS profile `sbp-webapp`; EC2: IAM role.
-- **Login:** username + plaintext password (PoC only), kept in a signed session cookie (`SessionMiddleware`, `SESSION_SECRET`), so repeat QR scans stay logged in.
+- **Login:** username + password checked by **Amazon Cognito** (`initiate_auth`, server-side); the result is kept in a signed session cookie (`SessionMiddleware`, `SESSION_SECRET`), so repeat QR scans stay logged in.
 - **Fake/real backend switch** (`BACKEND=fake|aws`): all AWS calls in `webapp/backend/`, so pages can be built before AWS exists.
 - **Confirmation:** after publishing `open`, polls the locks table for its `requestId` (up to ~8 s).
 - Refresh: HTMX polling.
@@ -142,7 +142,8 @@ Scan any QR → sign up → Connect Telegram.
 | ESP32 Wi-Fi down | No `opened` → "couldn't reach the lock" → claim undone / nothing changed → officer manual release. Events not buffered |
 | Late command after reconnect | ESP32 ignores expired `open` |
 | Two users tap "Use this lot" at once | Conditional write: only the first succeeds |
-| Lost phone / forgot password | Officer verifies in person → Force unlock |
+| Forgot password | "Forgot password?" → Cognito emails a code → set a new one (cyclists and officers) |
+| Lost phone / no access to email | Officer verifies in person → Force unlock, and resets the password (`admin_set_user_password`) |
 | Telegram not connected | No alerts; still visible on officer dashboard |
 | Cable not clicked back in | Harmless; undetectable (no microswitch) |
 | Batteries flat | Fail-secure lock stays shut; staff release |
@@ -158,7 +159,7 @@ Scan any QR → sign up → Connect Telegram.
 | Web framework (changed 10 Nov) | FastAPI + Jinja2 + Tailwind + HTMX + Leaflet | NiceGUI; Streamlit; FastAPI + React template | Target design needs full control of the look; Streamlit forgets sessions per tab; React template is overkill and assumes PostgreSQL |
 | IaC | Terraform | CloudFormation/SAM; console clicks | Teammate's suggestion, transferable skill, generates the IoT cert; one-command rebuild and teardown |
 | Repo | One repo | Separate repos | Shared names change together; small team |
-| Login (changed 10 Nov) | Username + plaintext password | bcrypt; Google OIDC; PIN per lock | Simplest for a PoC. Production: hashed passwords / Singpass/Google |
+| Login (changed 10 Nov) | Amazon Cognito user pool, own login pages calling it server-side | Plaintext / bcrypt in DynamoDB; Cognito hosted UI; Google OIDC; PIN per lock | Passwords never stored by us; managed AWS service, free up to 10,000 users. Hosted UI rejected: needs HTTPS callback, demo phones use http://laptop-ip. Production: add Singpass/Google as Cognito identity providers |
 | Cyclist alerts | Telegram, one-way | Web push; SMS | A web page can't alert a closed phone; free and instant |
 | Telegram linking | One-time code + `getUpdates` | Webhook Lambda | No inbound endpoint |
 | Officer view | Officer-only dashboard | Telegram group | Many lots; tamper log, overstays, Force unlock |
