@@ -26,6 +26,8 @@ if [ -x .venv/Scripts/python.exe ]; then VPY=.venv/Scripts/python.exe; else VPY=
 # 3. Install packages, only when requirements.txt changed since the last install.
 if [ ! -f .venv/.installed ] || ! cmp -s requirements.txt .venv/.installed; then
   echo "Installing packages..."
+  # A .venv made by uv has no pip; add it.
+  "$VPY" -m pip --version >/dev/null 2>&1 || "$VPY" -m ensurepip --upgrade >/dev/null
   "$VPY" -m pip install --quiet --upgrade pip
   "$VPY" -m pip install --quiet -r requirements.txt
   cp requirements.txt .venv/.installed
