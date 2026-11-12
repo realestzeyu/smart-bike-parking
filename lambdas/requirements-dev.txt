@@ -1,0 +1,4 @@
+# Dev/test only. NOT deployed (the Lambda runtime already has boto3).
+boto3>=1.35
+moto[dynamodb]>=5.0
+pytest>=8.0

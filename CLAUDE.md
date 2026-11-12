@@ -24,7 +24,7 @@ See `docs/agreed-names-and-formats.md`. **Both halves depend on it.** Don't inve
 - `simulator/` fake ESP32 script for testing without hardware
 - `firmware/` ESP32 code (later)
 - `certs/` device certificates (gitignored)
-- `docs/` handoff (full background) and the agreed names/formats
+- `docs/` handoff (full background), the agreed names/formats, and `cloud-logic.md` (Lambda logic diagrams)
 
 ## Hard rules
 - **Never commit secrets**: certificates/private keys, `.env`, Terraform state, `*.tfvars`, Telegram bot token, web app `SESSION_SECRET`, AWS keys.

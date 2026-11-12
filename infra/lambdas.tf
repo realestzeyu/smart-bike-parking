@@ -17,7 +17,7 @@ locals {
         },
         {
           actions   = ["dynamodb:GetItem"]
-          resources = [aws_dynamodb_table.users.arn]
+          resources = [aws_dynamodb_table.users.arn, aws_dynamodb_table.spaces.arn] # alert: chat id + address
         },
       ]
     }
@@ -36,19 +36,27 @@ locals {
         },
         {
           actions   = ["dynamodb:GetItem"]
-          resources = [aws_dynamodb_table.users.arn]
+          resources = [aws_dynamodb_table.users.arn, aws_dynamodb_table.spaces.arn] # alert: chat id + address
         },
       ]
     }
   }
 }
 
+# Each zip = that Lambda's handler.py + the shared helper (lambdas/shared/sbp_common.py).
 data "archive_file" "fn" {
   for_each    = local.lambdas
   type        = "zip"
-  source_dir  = "${path.module}/../lambdas/${each.key}"
   output_path = "${path.module}/build/${each.key}.zip"
-  excludes    = ["__pycache__", ".gitkeep"]
+
+  source {
+    filename = "handler.py"
+    content  = file("${path.module}/../lambdas/${each.key}/handler.py")
+  }
+  source {
+    filename = "sbp_common.py"
+    content  = file("${path.module}/../lambdas/shared/sbp_common.py")
+  }
 }
 
 resource "aws_cloudwatch_log_group" "fn" {

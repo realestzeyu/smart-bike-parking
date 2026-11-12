@@ -1,0 +1,5 @@
+{
+  "executionEnvironments": [
+    { "root": "lambdas", "extraPaths": ["lambdas/shared"] }
+  ]
+}
