@@ -9,9 +9,28 @@ import config
 from auth import require_officer
 from backend import get_backend
 from backend.base import lot_number, parse_lot_ref
-from templating import templates
+from templating import SGT, parse_iso, templates
 
 router = APIRouter()
+
+# Lot states and their colours (same meaning on pins, KPI donut, legend and badges).
+RING_COLOURS = {"tamper": "#B91C1C", "clear": "#FF6E00", "in_use": "#0F766E", "free": "#D9D7D0"}
+PART_LABELS = {"tamper": "Tamper", "clear": "To clear", "in_use": "In use", "free": "Free"}
+
+
+def ring_css(counts):
+    """Donut ring as flat conic-gradient segments, read counter-clockwise from 12 o'clock:
+    tamper, clear, in use, free. CSS draws clockwise, so lay them out from the end (free first)."""
+    total = sum(counts[k] for k in RING_COLOURS)
+    if not total:
+        return RING_COLOURS["free"]
+    stops, at = [], 0.0
+    for key in ("free", "in_use", "clear", "tamper"):
+        end = at + 100 * counts[key] / total
+        if end > at:
+            stops.append(f"{RING_COLOURS[key]} {at:.2f}% {end:.2f}%")
+        at = end
+    return "conic-gradient(" + ", ".join(stops) + ")"
 
 
 def console_data():
@@ -19,7 +38,6 @@ def console_data():
     b = get_backend()
     spaces = {s["id"]: s for s in b.list_spaces()}
     lots = [lot for sid in spaces for lot in b.list_lots(sid)]
-    occupied = sum(1 for lot in lots if lot["status"] != "free")
 
     def where(lot_id):
         space = spaces.get(lot_id.split("#")[0], {})
@@ -53,20 +71,41 @@ def console_data():
         session = b.get_session(e["session_id"]) if e.get("session_id") else None
         e.update(where=where(e["lot_id"]), owner=name_of(session["user_id"]) if session else None)
 
+    # One category per lot, same colours everywhere: tamper (red) > clear (orange) > in_use (green) > free (grey).
+    # tamper = a tamper event belongs to the bike parked there now (same session), so it clears when the bike leaves.
+    tampered = {e["session_id"] for e in tamper if e.get("session_id")}
+    to_clear = {s["lot_id"] for s in parked if s["abandoned"]} | {r["lot_id"] for r in unregistered}
+
+    def category(lot):
+        if lot.get("session_id") in tampered:
+            return "tamper"
+        if lot["id"] in to_clear:
+            return "clear"
+        return "in_use" if lot["status"] != "free" else "free"
+
     stations = []
     for sid, space in spaces.items():
+        counts = {"in_use": 0, "clear": 0, "tamper": 0, "free": 0}
+        for lot in lots:
+            if lot["space_id"] == sid:
+                counts[category(lot)] += 1
+        total = sum(counts.values())
+        used = total - counts["free"]
         stations.append({
             "id": sid, "lat": space["lat"], "lng": space["lng"], "address": space["address"],
-            "abandoned": sum(1 for s in parked if s["abandoned"] and s["lot_id"].startswith(sid + "#")),
-            "unregistered": sum(1 for r in unregistered if r["lot_id"].startswith(sid + "#")),
+            "total": total, "used": used, "pct": round(100 * used / total) if total else 0, **counts,
+            "ring": ring_css(counts),
         })
 
+    used = sum(s["used"] for s in stations)
+    network = {k: sum(s[k] for s in stations) for k in RING_COLOURS}
     return {
         "kpi": {
             "stations": len(spaces),
             "lots": len(lots),
-            "utilisation": round(100 * occupied / len(lots)) if lots else 0,
-            "occupied": occupied,
+            "utilisation": round(100 * used / len(lots)) if lots else 0,
+            "used": used,
+            "parts": [{"key": k, "label": PART_LABELS[k], "colour": RING_COLOURS[k], "n": network[k]} for k in RING_COLOURS],
             "abandoned": sum(1 for s in parked if s["abandoned"]),
             "unregistered": len(unregistered),
             "tamper_week": sum(1 for e in tamper if e["detected_time"] >= week_ago),
@@ -76,6 +115,76 @@ def console_data():
         "unregistered": unregistered,
         "tamper": tamper[:20],
         "stations": stations,
+        "usage": sorted(stations, key=lambda s: -s["pct"]),
+    }
+
+
+def _hour_label(t):
+    h = t.astimezone(SGT).hour
+    return f"{h % 12 or 12} {'am' if h < 12 else 'pm'}"
+
+
+RANGES = {24: 1, 72: 3, 168: 6}  # time range (hours) -> bucket size (hours)
+
+
+def _when(t, hours):
+    """Bucket label in SGT: '9 am' for 24 h, 'Wed 9 am' for longer ranges."""
+    return _hour_label(t) if hours == 24 else f"{t.astimezone(SGT):%a} {_hour_label(t)}"
+
+
+def history_data(space="all", hours=24, tamper=True):
+    """Usage & tamper chart: per time bucket, average share of lots in use (30-min samples) and tamper alerts.
+    Usage counts parkings made through the app (unregistered bikes leave no history)."""
+    b = get_backend()
+    spaces = sorted(b.list_spaces(), key=lambda s: s["id"])
+    if space not in {s["id"] for s in spaces}:
+        space = "all"
+    if hours not in RANGES:
+        hours = 24
+    size = RANGES[hours]
+    mine = (lambda lot_id: True) if space == "all" else (lambda lot_id: lot_id.startswith(space + "#"))
+
+    now = datetime.now(timezone.utc)
+    sgt = now.astimezone(SGT)
+    end = (sgt.replace(minute=0, second=0, microsecond=0) - timedelta(hours=sgt.hour % size) + timedelta(hours=size)).astimezone(timezone.utc)
+    n = hours // size
+    starts = [end - timedelta(hours=size * (n - j)) for j in range(n)]
+    total = sum(len(b.list_lots(s["id"])) for s in spaces if space in ("all", s["id"])) or 1
+    sessions = [(parse_iso(s["start_time"]), parse_iso(s["end_time"]) if s.get("end_time") else None)
+                for s in b.list_sessions_since(starts[0].strftime("%Y-%m-%dT%H:%M:%SZ")) if mine(s["lot_id"])]
+    alerts = [parse_iso(e["detected_time"]) for e in b.list_tamper_events() if mine(e["lot_id"])]
+
+    # SVG 960 wide: usage panel y 12..172, tamper panel y 200..250, x labels below. Plot x 44..948.
+    slot = 904 / n
+    width = round(slot * 0.72, 1)
+    top_t = 1
+    cols = []
+    for j, s0 in enumerate(starts):
+        s1 = s0 + timedelta(hours=size)
+        samples = [s0 + timedelta(minutes=15 + 30 * i) for i in range(size * 2)]
+        samples = [t for t in samples if t <= now] or [now]
+        pct = round(sum(sum(1 for a, z in sessions if a <= t and (z is None or z > t)) for t in samples) * 100 / (len(samples) * total))
+        count = sum(1 for t in alerts if s0 <= t < s1)
+        top_t = max(top_t, count)
+        x = round(44 + j * slot + (slot - width) / 2, 1)
+        h = round(160 * pct / 100, 1)
+        r = min(4, h, width / 2)
+        bar = (f"M{x},172 V{172 - h + r} Q{x},{172 - h} {x + r},{172 - h} H{round(x + width - r, 1)} "
+               f"Q{x + width},{172 - h} {x + width},{172 - h + r} V172 Z") if h else ""
+        label = ""
+        if (hours == 24 and s0.astimezone(SGT).hour % 6 == 0) or (hours == 72 and s0.astimezone(SGT).hour % 12 == 0)                 or (hours == 168 and s0.astimezone(SGT).hour == 0):
+            label = _hour_label(s0) if hours == 24 else (f"{s0.astimezone(SGT):%a}" if s0.astimezone(SGT).hour == 0 else _hour_label(s0))
+        cols.append({"x": x, "cx": round(x + width / 2, 1), "bar": bar, "pct": pct, "count": count, "label": label,
+                     "tip": f"{_when(s0, hours)} · {pct}% used" + (f" · {count} tamper" if tamper else "")})
+    for c in cols:
+        c["ty"] = round(250 - 50 * c["count"] / top_t, 1)
+    return {
+        "space": space, "hours": hours, "tamper": tamper, "top": top_t, "cols": cols,
+        "spaces": [{"id": s["id"], "address": s["address"]} for s in spaces],
+        "tamper_line": " ".join(f"{'M' if i == 0 else 'L'}{c['cx']},{c['ty']}" for i, c in enumerate(cols)),
+        "height": 284 if tamper else 204,
+        "label_y": 272 if tamper else 192,
+        "total_tamper": sum(c["count"] for c in cols),
     }
 
 
@@ -88,7 +197,16 @@ def console(request: Request, confirm: str = "", done: str = "", failed: str = "
     limit = f"{m // 1440} day{'' if m // 1440 == 1 else 's'}" if m >= 1440 and m % 1440 == 0 else f"{m} min"
     return templates.TemplateResponse(request, "officer.html", {
         **data, "user": user, "confirm": pending, "done": done, "failed": failed, "unregistered_limit": limit,
+        "history": history_data(),
     })
+
+
+@router.get("/officer/history")
+def history_refresh(request: Request, space: str = "all", hours: int = 24, tamper: str = ""):
+    """Filter changes and the 60 s poll; returns the chart body as an out-of-band swap."""
+    require_officer(request)
+    return templates.TemplateResponse(request, "_officer_history.html",
+                                      {"history": history_data(space, hours, tamper == "on"), "oob": True})
 
 
 @router.get("/officer/data")

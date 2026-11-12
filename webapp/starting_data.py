@@ -69,3 +69,47 @@ def simulated_rows(now=None):
             lots.append({"space_id": st["id"], "id": lot_id, "status": "taken", "bike_present": True,
                          "user_id": DEMO_USER["id"], "session_id": session_id})
     return spaces, lots, sessions
+
+
+# ---- Fake mode only: the last 24 h of history, so the officer's 24 h charts aren't empty ----
+# Not loaded into DynamoDB (times are relative to "now" and would go stale; real use fills AWS).
+# Commuter shape in Singapore time: parkings started per hour, and how long they last (minutes).
+_STARTS_BY_SGT_HOUR = {6: 1, 7: 3, 8: 4, 9: 2, 11: 1, 12: 2, 13: 1, 15: 1, 17: 2, 18: 2, 19: 1, 20: 1}
+
+
+def _duration_minutes(sgt_hour, k):
+    if sgt_hour < 10:
+        return 540 + (k * 37) % 90  # commuters: in the morning, out in the evening
+    return 90 + (k * 23) % 90  # short visits
+
+
+def simulated_history(lots, now=None, days=7):
+    """(closed sessions, tamper events) from the last `days` days, on simulated lots. Fake backend only."""
+    now = now or datetime.now(timezone.utc)
+    spare = [l["id"] for l in lots if l["status"] == "free" and not l["bike_present"] and not l["id"].startswith("space1#")]
+    busy_until = {lot_id: now - timedelta(days=days + 1) for lot_id in spare}
+    sessions, k = [], 0
+    hour0 = now.replace(minute=0, second=0, microsecond=0)
+    for h in range(24 * days, 0, -1):
+        start_hour = hour0 - timedelta(hours=h)
+        sgt_hour = (start_hour + timedelta(hours=8)).hour
+        for _ in range(_STARTS_BY_SGT_HOUR.get(sgt_hour, 0)):
+            start = start_hour + timedelta(minutes=(k * 17) % 60)
+            end = start + timedelta(minutes=_duration_minutes(sgt_hour, k))
+            k += 1
+            lot_id = next((l for l in spare if busy_until[l] <= start), None)
+            if end >= now or not lot_id:
+                continue
+            busy_until[lot_id] = end
+            sessions.append({"id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"sbp-history/{k}")), "lot_id": lot_id,
+                             "user_id": DEMO_USER["id"], "start_time": _iso(start), "end_time": _iso(end)})
+    taken = next((l for l in lots if l["status"] == "taken" and l["id"].startswith("space4#")), None)
+    # Spread over the week (hours ago), mostly at night; the last one is on a bike still parked.
+    tamper = [{"lot_id": spare[i % len(spare)], "minutes_ago": h * 60 + 20}
+              for i, h in enumerate([150, 122, 98, 74, 51, 26, 21, 14])]
+    tamper.append({"lot_id": taken["id"], "session_id": taken["session_id"], "minutes_ago": 140} if taken else None)
+    events = [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"sbp-history/tamper/{i}")), "lot_id": t["lot_id"],
+               "detected_time": _iso(now - timedelta(minutes=t["minutes_ago"])), "notified": "session_id" in t,
+               **({"session_id": t["session_id"]} if "session_id" in t else {})}
+              for i, t in enumerate(tamper) if t]
+    return sessions, events

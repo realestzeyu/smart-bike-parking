@@ -107,27 +107,83 @@ body.detail-open #locate { display: none; }
 /* ---- Officer console ---- */
 .card { background: #fff; border: 1px solid #E4E2DC; border-radius: 10px; }
 .badge { display: inline-block; border-radius: 999px; padding: 3px 12px; font-size: 14px; font-weight: 500; white-space: nowrap; }
-.count-pin {
+/* Station pin: ring split by lot state (background set in officer.js), white centre with used/total. */
+.ring-pin {
   display: grid;
   place-items: center;
-  width: 40px;
-  height: 40px;
+  width: 54px;
+  height: 54px;
   transform: translate(-50%, -50%);
   border-radius: 999px;
-  border: 3px solid #fff;
-  background: #B91C1C;
+  box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(31, 31, 28, 0.25);
+}
+.ring-pin > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: #fff;
+  color: #1F1F1C;
+  font: 600 13px/1 "IBM Plex Sans", system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+/* Utilisation KPI: one segmented bar (2px gaps between parts); hover/focus shows the breakdown. */
+.seg { position: relative; outline: none; }
+.seg-bar { display: flex; gap: 2px; height: 12px; border-radius: 999px; overflow: hidden; cursor: default; }
+.seg-tip {
+  display: none;
+  position: absolute;
+  z-index: 1100;
+  top: calc(100% + 8px);
+  left: 0;
+  padding: 10px 12px;
+  border: 1px solid #E4E2DC;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(31, 31, 28, 0.15);
+}
+.seg:hover .seg-tip, .seg:focus-visible .seg-tip { display: block; }
+.seg:focus-visible .seg-bar { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0F766E; }
+/* "?" help: hover or keyboard focus shows data-tip. */
+.help {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  vertical-align: 2px;
+  border-radius: 999px;
+  border: 1px solid #C9C6BE;
+  background: #fff;
+  color: #6B6A63;
+  font: 600 12px/1 "IBM Plex Sans", system-ui, sans-serif;
+  cursor: help;
+}
+.help:hover, .help:focus-visible { border-color: #6B6A63; color: #1F1F1C; }
+.help:hover::after, .help:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 1100; /* above the Leaflet map */
+  bottom: calc(100% + 8px); /* opens above the "?", so it never covers the block's numbers */
+  left: 50%;
+  transform: translateX(-50%);
+  width: 280px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #1F1F1C;
   color: #fff;
-  font: 600 16px/1 "IBM Plex Sans", system-ui, sans-serif;
+  font: 400 14px/1.45 "IBM Plex Sans", system-ui, sans-serif;
+  text-align: left;
+  white-space: normal;
 }
-.station-dot {
-  display: block;
-  width: 18px;
-  height: 18px;
-  transform: translate(-50%, -50%);
-  border-radius: 5px;
-  border: 2px solid #fff;
-  background: #0F766E;
-}
+.help-end:hover::after, .help-end:focus-visible::after { left: auto; right: -8px; transform: none; }
+.ring-tip { font: 400 14px/1.4 "IBM Plex Sans", system-ui, sans-serif; color: #1F1F1C; min-width: 190px; }
+.ring-tip ul { margin: 6px 0; }
+.ring-tip li { display: flex; align-items: center; gap: 8px; }
+.ring-tip li b { margin-left: auto; font-weight: 600; }
+.ring-tip p { color: #6B6A63; }
 
 .leaflet-container { font-family: "IBM Plex Sans", system-ui, sans-serif; background: #EEF0EA; }
 /* Mute the OpenStreetMap colours toward the mockup's grey-green ground. */
@@ -143,4 +199,19 @@ body.detail-open #locate { display: none; }
   border-radius: 10px;
   font-size: 14px;
   font-weight: 600;
+}
+
+/* Shared hover tooltip for the last-24-h charts (officer.js). */
+.chart-tip {
+  position: fixed;
+  z-index: 1100;
+  pointer-events: none;
+  padding: 6px 10px;
+  border: 1px solid #E4E2DC;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(31, 31, 28, 0.15);
+  font: 500 14px/1.3 "IBM Plex Sans", system-ui, sans-serif;
+  color: #1F1F1C;
+  white-space: nowrap;
 }

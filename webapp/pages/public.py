@@ -69,5 +69,5 @@ def spaces_json():
 def station_sheet(request: Request, space_id: str):
     space = get_backend().get_space(space_id)
     if not space:
-        raise HTTPException(status_code=404, detail="Station not found")
+        raise HTTPException(status_code=404, detail="Parking space not found")
     return templates.TemplateResponse(request, "_station_sheet.html", {"s": summarise(space)})

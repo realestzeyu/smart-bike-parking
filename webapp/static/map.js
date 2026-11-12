@@ -34,7 +34,7 @@
         markers[s.id].setIcon(pinIcon(s));
         markers[s.id].station = s;
       } else {
-        const m = L.marker([s.lat, s.lng], { icon: pinIcon(s), title: 'Station details' }).addTo(map);
+        const m = L.marker([s.lat, s.lng], { icon: pinIcon(s), title: 'Parking space details' }).addTo(map);
         m.station = s;
         m.on('click', function () { openStation(s.id); });
         markers[s.id] = m;

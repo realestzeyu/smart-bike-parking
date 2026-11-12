@@ -9,7 +9,7 @@ import uuid
 from decimal import Decimal
 
 import boto3
-from boto3.dynamodb.conditions import Key
+from boto3.dynamodb.conditions import Attr, Key
 from boto3.dynamodb.types import TypeSerializer
 from botocore.exceptions import ClientError
 
@@ -205,6 +205,10 @@ class AwsBackend(Backend):
             start = resp.get("LastEvaluatedKey")
             if not start:
                 return [_plain(i) for i in items]
+
+    def list_sessions_since(self, since_iso):
+        # Small table in the PoC, so a filtered Scan is fine (read-only; for the officer 24 h charts).
+        return self._scan(self.t_sessions, FilterExpression=Attr("end_time").not_exists() | Attr("end_time").gte(since_iso))
 
     def list_tamper_events(self):
         return sorted(self._scan(self.t_tamper), key=lambda e: e["detected_time"], reverse=True)

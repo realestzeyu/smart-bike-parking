@@ -10,7 +10,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from starting_data import DEMO_USER, LOTS, OFFICER, SPACES, simulated_rows
+from starting_data import DEMO_USER, LOTS, OFFICER, SPACES, simulated_history, simulated_rows
 
 from .base import Backend, now_iso
 
@@ -37,7 +37,9 @@ class FakeBackend(Backend):
         self.lots = {(l["space_id"], l["id"]): dict(l) for l in LOTS + sim_lots}
         self.sessions = {s["id"]: dict(s) for s in sim_sessions}
         self.flag_overstays(3 * 1440)  # simulated bikes parked over 3 days start as suspected abandoned
-        self.tamper_events = {}
+        past_sessions, past_tamper = simulated_history(sim_lots)  # last 24 h, for the officer charts
+        self.sessions.update({s["id"]: s for s in past_sessions})
+        self.tamper_events = {e["id"]: e for e in past_tamper}
         self.published = []  # (lot_id, payload) log of open commands
         self._leaving = set()  # lots with an automatic bike_left already scheduled
 
@@ -128,6 +130,9 @@ class FakeBackend(Backend):
 
     def list_open_sessions(self):
         return [dict(s) for s in self.sessions.values() if s.get("is_open") == "Y"]
+
+    def list_sessions_since(self, since_iso):
+        return [dict(s) for s in self.sessions.values() if s.get("end_time", "~") >= since_iso]
 
     def list_tamper_events(self):
         return sorted((dict(e) for e in self.tamper_events.values()), key=lambda e: e["detected_time"], reverse=True)

@@ -11,9 +11,10 @@ Every page follows this file. **The three mockups in this folder are the spec**;
 ## Colour
 | Token | Hex | Use |
 |---|---|---|
-| teal | `#0F766E` | free, primary buttons, links, active tab |
-| amber | `#B45309` | few lots left; parked 14–30 days |
-| alert (red) | `#B91C1C` | over the abandon limit; removal due |
+| teal | `#0F766E` | free (cyclist map), lot in use (console), primary buttons, links, active tab |
+| amber | `#B45309` | few lots left (cyclist map) |
+| orange | `#FF6E00` (tint `#FFF0E5`) | console: bikes to clear (suspected abandoned or unregistered); badges are solid orange with ink text |
+| alert (red) | `#B91C1C` | console: tamper / theft alert only |
 | stone (grey) | `#6B6A63` | occupied lot, "Full" pin, secondary text |
 | ground | `#EEF0EA` | map background |
 | page | `#F6F5F1` | page background (console) |
@@ -30,7 +31,8 @@ Tints for badges: teal soft `#E3F1EF`, amber soft `#FDF3E7`, red soft `#FBE9E9`.
 
 ## Layout
 - **Phone (cyclist):** full-bleed map; white bottom sheet with a grab handle; tab bar at the bottom (Map active; My parking and Profile greyed out). Pins are pills with the free count. The QR lot page uses the bottom-sheet look.
-- **Desktop (console):** header with logo + title; row of 4 KPI cards; map (2/3) beside "Longest-parked bicycles" (1/3); tamper log full width.
+- **Desktop (console):** header with logo + title; row of 4 KPI cards, ~210 px tall (Utilisation: big % + segmented bar, hover = split; Usage by space (scrolls); Bikes to clear; Tamper); one "Usage & tamper" chart under the map (usage-rate columns on top, tamper line in a slim panel below, one shared time axis, never a second y-axis; filters: parking space, 24 h / 3 days / 7 days, tamper on/off; plain SVG, hover tooltips); map full width (no header; same-size donut pins, filled counter-clockwise from the top: tamper/to clear/in use/free, centre = used/total, hover = breakdown); Longest parked beside Unregistered bikes; tamper log full width. Say "parking space", not "station".
+- **Console text:** short bold titles, at most one subtitle line; longer explanations go in a small "?" (hover/focus).
 - Text is left-aligned.
 
 ## Avoid

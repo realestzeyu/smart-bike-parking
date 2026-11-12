@@ -52,4 +52,5 @@ class Backend:
     # Read-only lists (officer console)
     def get_session(self, session_id): ...
     def list_open_sessions(self): ...  # sessions with is_open = "Y"
+    def list_sessions_since(self, since_iso): ...  # still open, or ended at/after since_iso (officer 24 h charts)
     def list_tamper_events(self): ...  # newest first

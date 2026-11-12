@@ -3,7 +3,7 @@
 {% set n = lot.id | lot_number %}
 {% set map_at = {"lat": space.lat, "lng": space.lng, "label": "Lot " ~ n, "level": "ok" if state == "free" else "full"} %}
 {% set back_href = "/#" ~ space.id %}
-{% set back_label = "Back to the station" %}
+{% set back_label = "Back to the parking space" %}
 {% block title %}Lot {{ n }} · {{ space.address }}{% endblock %}
 {% block sheet %}
 <p class="mt-5 text-stone">{{ space.address }}</p>

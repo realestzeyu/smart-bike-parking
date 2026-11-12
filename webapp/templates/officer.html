@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% from "_officer_parts.html" import kpis, parked_table, unregistered_table, tamper_table %}
+{% from "_officer_parts.html" import help, kpis, parked_table, unregistered_table, tamper_table %}
+{% from "_officer_history.html" import history_card %}
 {% block title %}Bicycle Parking Console{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -37,41 +38,41 @@
   <p class="card border-alert bg-alert-soft text-alert px-5 py-4" role="alert">Couldn't force unlock {{ failed | replace("_", " · ") }}: it isn't in use any more.</p>
   {% endif %}
 
-  {{ kpis(kpi) }}
+  {{ kpis(kpi, usage) }}
 
-  <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
-    <section class="card p-6 xl:col-span-3">
-      <div class="flex flex-wrap items-baseline gap-x-3">
-        <h2 class="text-xl font-semibold">Stations with abandoned bicycles</h2>
-        <p class="text-stone">Pin number = suspected abandoned + unregistered bikes at that station</p>
-      </div>
-      <div id="console-map" class="mt-5 h-[420px] rounded bg-ground"></div>
-      <ul class="mt-4 flex flex-wrap gap-6 text-stone">
-        <li class="flex items-center gap-2"><span class="dot bg-alert"></span>Suspected abandoned or unregistered bikes</li>
-        <li class="flex items-center gap-2"><span class="dot bg-teal"></span>No abandoned bikes</li>
-      </ul>
-    </section>
-    <section class="card p-6 xl:col-span-2">
-      <h2 class="text-xl font-semibold">Longest-parked bicycles</h2>
+  <section class="card p-6">
+    <h2 class="sr-only">Map of parking spaces</h2>
+    <div id="console-map" class="h-[480px] rounded bg-ground"></div>
+    <ul class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-stone">
+      <li class="flex items-center gap-2"><span class="dot bg-alert"></span>Tamper</li>
+      <li class="flex items-center gap-2"><span class="dot bg-orange"></span>To clear</li>
+      <li class="flex items-center gap-2"><span class="dot bg-teal"></span>In use</li>
+      <li class="flex items-center gap-2"><span class="dot bg-[#D9D7D0]"></span>Free</li>
+      <li class="ml-auto">Pin: lots used / total {{ help("Each pin is a parking space. The ring shows its lots by state, counter-clockwise from the top: tamper, to clear (abandoned or unregistered), in use, free. Hover a pin for the counts. Refreshes every 5 s.", end=True) }}</li>
+    </ul>
+  </section>
+
+  {{ history_card(history) }}
+
+  <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+    <section class="card p-6">
+      <h2 class="text-xl font-semibold">Longest parked {{ help("Bikes parked through the app, longest first. Abandoned? = the owner overstayed and was sent a reminder. Force unlock only after checking the person's ID.") }}</h2>
       <div class="mt-4">{{ parked_table(parked) }}</div>
+    </section>
+    <section class="card p-6">
+      <h2 class="text-xl font-semibold">Unregistered bikes {{ help("A bike detected in a free lot for over " ~ unregistered_limit ~ " without anyone using the lot. Candidates for removal.", end=True) }}</h2>
+      <div class="mt-4">{{ unregistered_table(unregistered) }}</div>
     </section>
   </div>
 
   <section class="card p-6">
-    <h2 class="text-xl font-semibold">Bicycles parked without using the system</h2>
-    <p class="text-stone">Bike detected in a free lot for over {{ unregistered_limit }}, with no owner on record. Candidates for removal.</p>
-    <div class="mt-4">{{ unregistered_table(unregistered) }}</div>
-  </section>
-
-  <section class="card p-6">
-    <h2 class="text-xl font-semibold">Tamper log</h2>
+    <h2 class="text-xl font-semibold">Tamper log {{ help("Latest 20 alerts: lock vibration, or a bike that left without an unlock (suspected theft). A lot shows red on the map while the bike parked there has an alert.") }}</h2>
     <div class="mt-4">{{ tamper_table(tamper) }}</div>
   </section>
-
-  <p class="text-sm text-stone">A bicycle counts as suspected abandoned once its owner has been sent an overstay reminder, and as unregistered when it sits in a free lot past the limit without anyone using the lot. Refreshes every 5 s.</p>
 </main>
 
 <div hx-get="/officer/data" hx-trigger="every 5s" hx-swap="none" aria-hidden="true"></div>
+<div hx-get="/officer/history" hx-trigger="every 60s" hx-include="#hist-filters" hx-swap="none" aria-hidden="true"></div>
 <script id="console-stations" type="application/json">{{ stations | tojson }}</script>
 <script src="/static/officer.js"></script>
 {% endblock %}

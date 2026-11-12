@@ -1,0 +1,53 @@
+{# "Usage & tamper" chart under the map (data: history_data() in pages/officer.py). Plain SVG, redrawn by the server.
+   Two panels share one time axis: usage-rate columns on top, tamper line below (no second y-axis).
+   The page imports history_card(); /officer/history renders this file with oob=True on filter change and every 60 s. #}
+{% from "_officer_parts.html" import help %}
+
+{% macro chart(h, oob=False) %}
+<div id="hist-chart" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <svg viewBox="0 0 960 {{ h.height }}" class="chart w-full h-auto" role="img"
+       aria-label="Share of lots used{{ ' and tamper alerts' if h.tamper }} per {{ 'hour' if h.hours == 24 else 'time slot' }}, last {{ h.hours }} hours.">
+    {% for v in [0, 50, 100] %}{% set y = 12 + 160 * (1 - v / 100) %}
+    <line x1="44" x2="948" y1="{{ y }}" y2="{{ y }}" stroke="#E4E2DC"/>
+    <text x="38" y="{{ y + 4 }}" text-anchor="end" font-size="12" fill="#6B6A63">{{ v }}%</text>
+    {% endfor %}
+    {% for c in h.cols %}{% if c.bar %}<path d="{{ c.bar }}" fill="#0F766E"/>{% endif %}{% endfor %}
+    {% if h.tamper %}
+    <text x="48" y="194" font-size="12" fill="#B91C1C">Tamper alerts</text>
+    <line x1="44" x2="948" y1="200" y2="200" stroke="#E4E2DC"/>
+    <line x1="44" x2="948" y1="250" y2="250" stroke="#E4E2DC"/>
+    <text x="38" y="214" text-anchor="end" font-size="12" fill="#6B6A63">{{ h.top }}</text>
+    <text x="38" y="254" text-anchor="end" font-size="12" fill="#6B6A63">0</text>
+    <path d="{{ h.tamper_line }}" fill="none" stroke="#B91C1C" stroke-width="2" stroke-linejoin="round"/>
+    {% for c in h.cols if c.count %}<circle cx="{{ c.cx }}" cy="{{ c.ty }}" r="4" fill="#B91C1C" stroke="#fff" stroke-width="2"/>{% endfor %}
+    {% endif %}
+    {% for c in h.cols if c.label %}<text x="{{ c.cx }}" y="{{ h.label_y }}" text-anchor="middle" font-size="12" fill="#6B6A63">{{ c.label }}</text>{% endfor %}
+    <line class="xhair" x1="0" x2="0" y1="12" y2="{{ 250 if h.tamper else 172 }}" stroke="#1F1F1C" stroke-opacity="0.35" visibility="hidden"/>
+    <circle class="xdot" r="0" visibility="hidden"/>
+    {% for c in h.cols %}<rect x="{{ c.cx - 452 / h.cols | length }}" y="12" width="{{ 904 / h.cols | length }}" height="{{ 238 if h.tamper else 160 }}" fill="transparent" data-tip="{{ c.tip }}" data-x="{{ c.cx }}" data-y="0"/>{% endfor %}
+  </svg>
+</div>
+{% endmacro %}
+
+{% macro history_card(h) %}
+<section class="card p-6">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <h2 class="text-xl font-semibold">Usage &amp; tamper {{ help("Top: average share of lots in use in each time slot (parkings made through the app; unregistered bikes leave no history). Bottom: tamper and suspected-theft alerts per slot. Both share the same time axis. Hover a slot for its numbers.") }}</h2>
+    <form id="hist-filters" hx-get="/officer/history" hx-trigger="change" hx-swap="none" class="flex flex-wrap items-center gap-3 text-sm">
+      <label class="sr-only" for="hist-space">Parking space</label>
+      <select id="hist-space" name="space" class="border border-stone-line rounded px-3 py-1.5 bg-white">
+        <option value="all">All parking spaces</option>
+        {% for s in h.spaces %}<option value="{{ s.id }}" {{ 'selected' if s.id == h.space }}>{{ s.address }}</option>{% endfor %}
+      </select>
+      <label class="sr-only" for="hist-hours">Time range</label>
+      <select id="hist-hours" name="hours" class="border border-stone-line rounded px-3 py-1.5 bg-white">
+        {% for v, t in [(24, "Last 24 h"), (72, "Last 3 days"), (168, "Last 7 days")] %}<option value="{{ v }}" {{ 'selected' if v == h.hours }}>{{ t }}</option>{% endfor %}
+      </select>
+      <label class="flex items-center gap-2"><input type="checkbox" name="tamper" {{ 'checked' if h.tamper }} class="accent-[#B91C1C]"> Tamper</label>
+    </form>
+  </div>
+  <div class="mt-4">{{ chart(h) }}</div>
+</section>
+{% endmacro %}
+
+{% if oob %}{{ chart(history, oob=True) }}{% endif %}
