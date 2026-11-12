@@ -8,6 +8,7 @@ What the web app side and the AWS side have agreed on: tables and fields, who wr
 - **No `/forgot-password` page** (dropped for the PoC). Fallback: an officer resets the password (`admin_set_user_password`).
 - Lot flow (section 3): **no Cancel** after "Use this lot", and **no polling / 2-min timeout** after Unlock (unlock confirmation stays KIV). Buttons: Release again / Unlock again.
 - **Starting data includes 3 simulated stations** (20 lots each, parked sessions owned by a `demo` user) so the map and console look like a network (section 2).
+- **Claim does not require `bike_present`** (section 3 rule not built for the PoC: a missed IR event would block the demo). The lot page only warns "No bike detected yet".
 
 **Schema review (10 Nov, AWS side):**
 - **`session.is_open`** (`"Y"` while open, **removed** on close) + sparse GSI **`open-sessions`** (`is_open` + `start_time`): open sessions / abandoned bikes without scanning the whole table. `check_overstay` now queries this index.

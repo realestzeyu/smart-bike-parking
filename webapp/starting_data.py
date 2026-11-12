@@ -21,10 +21,13 @@ OFFICER = {"id": "officer", "name": "Officer", "email": "", "role": "officer"}
 # ---- Simulated stations (no hardware) so the map and console look like a real network ----
 # 20 lots each: one available, one with few left, one full. Coordinates approximate, all near space1.
 SIMULATED_STATIONS = [
-    {"id": "space2", "address": "Upper Changi MRT Exit A", "lat": 1.3440, "lng": 103.9628, "free": 12},
-    {"id": "space3", "address": "SUTD Campus Centre", "lat": 1.3413, "lng": 103.9640, "free": 2},
-    {"id": "space4", "address": "Upper Changi MRT Exit B", "lat": 1.3411, "lng": 103.9588, "free": 0},
+    {"id": "space2", "address": "Upper Changi MRT Exit A", "lat": 1.3440, "lng": 103.9628, "free": 12, "unregistered": 2},
+    {"id": "space3", "address": "SUTD Campus Centre", "lat": 1.3413, "lng": 103.9640, "free": 2, "unregistered": 1},
+    {"id": "space4", "address": "Upper Changi MRT Exit B", "lat": 1.3411, "lng": 103.9588, "free": 0, "unregistered": 0},
 ]
+# "unregistered" = free lots with a bike in them that never used the system (officer console flag).
+# How long each of those bikes has been there (minutes), cycled.
+_UNREGISTERED_MINUTES = [26 * 1440, 9 * 60, 5 * 1440]
 LOTS_PER_SIMULATED_STATION = 20
 
 # Owner of every simulated parked bike. Profile row only: it has no login.
@@ -42,12 +45,19 @@ def simulated_rows(now=None):
     """(spaces, lots, sessions) for the simulated stations. Session ids are fixed, so re-loading never duplicates."""
     now = now or datetime.now(timezone.utc)
     spaces, lots, sessions = [], [], []
-    k = 0
+    k = u = 0
     for st in SIMULATED_STATIONS:
         spaces.append({key: st[key] for key in ("id", "address", "lat", "lng")})
         free_lots = {(i * 7) % LOTS_PER_SIMULATED_STATION + 1 for i in range(st["free"])}  # spread across the rack
+        unregistered = set(sorted(free_lots)[:st["unregistered"]])
         for n in range(1, LOTS_PER_SIMULATED_STATION + 1):
             lot_id = f"{st['id']}#lot{n}"
+            if n in unregistered:
+                since = now - timedelta(minutes=_UNREGISTERED_MINUTES[u % len(_UNREGISTERED_MINUTES)])
+                u += 1
+                lots.append({"space_id": st["id"], "id": lot_id, "status": "free", "bike_present": True,
+                             "bike_present_since": _iso(since)})
+                continue
             if n in free_lots:
                 lots.append({"space_id": st["id"], "id": lot_id, "status": "free", "bike_present": False})
                 continue

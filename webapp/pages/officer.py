@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 
+import config
 from auth import require_officer
 from backend import get_backend
 from backend.base import lot_number, parse_lot_ref
@@ -37,6 +38,15 @@ def console_data():
         s.update(where=where(s["lot_id"]), lot_label=f"Lot {lot_number(s['lot_id'])}", station=station,
                  owner=name_of(s["user_id"]), abandoned="overstay_notified_at" in s, ref=s["lot_id"].replace("#", "_"))
 
+    # Unregistered bikes: bike in a free lot for too long, never used the system (derived, nothing stored)
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=config.UNREGISTERED_LIMIT_MINUTES)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    unregistered = sorted(
+        ({"lot_id": lot["id"], "lot_label": f"Lot {lot_number(lot['id'])}", "since": lot["bike_present_since"],
+          "station": spaces.get(lot["space_id"], {}).get("address", "")}
+         for lot in lots
+         if lot["status"] == "free" and lot.get("bike_present") and lot.get("bike_present_since", "~") < cutoff),
+        key=lambda r: r["since"])  # longest first
+
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
     tamper = b.list_tamper_events()
     for e in tamper:
@@ -48,6 +58,7 @@ def console_data():
         stations.append({
             "id": sid, "lat": space["lat"], "lng": space["lng"], "address": space["address"],
             "abandoned": sum(1 for s in parked if s["abandoned"] and s["lot_id"].startswith(sid + "#")),
+            "unregistered": sum(1 for r in unregistered if r["lot_id"].startswith(sid + "#")),
         })
 
     return {
@@ -57,10 +68,12 @@ def console_data():
             "utilisation": round(100 * occupied / len(lots)) if lots else 0,
             "occupied": occupied,
             "abandoned": sum(1 for s in parked if s["abandoned"]),
+            "unregistered": len(unregistered),
             "tamper_week": sum(1 for e in tamper if e["detected_time"] >= week_ago),
             "last_tamper": tamper[0]["detected_time"] if tamper else None,
         },
         "parked": parked,
+        "unregistered": unregistered,
         "tamper": tamper[:20],
         "stations": stations,
     }
@@ -71,8 +84,10 @@ def console(request: Request, confirm: str = "", done: str = "", failed: str = "
     user = require_officer(request)
     data = console_data()
     pending = next((s for s in data["parked"] if s["ref"] == confirm), None)
+    m = config.UNREGISTERED_LIMIT_MINUTES
+    limit = f"{m // 1440} day{'' if m // 1440 == 1 else 's'}" if m >= 1440 and m % 1440 == 0 else f"{m} min"
     return templates.TemplateResponse(request, "officer.html", {
-        **data, "user": user, "confirm": pending, "done": done, "failed": failed,
+        **data, "user": user, "confirm": pending, "done": done, "failed": failed, "unregistered_limit": limit,
     })
 
 

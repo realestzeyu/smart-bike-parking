@@ -138,8 +138,10 @@ class FakeBackend(Backend):
             lot = self.lots[(space_id, lot_id)]
             if event_type == "bike_arrived":
                 lot["bike_present"] = True
+                lot.setdefault("bike_present_since", now_iso())
             elif event_type == "bike_left":
                 lot["bike_present"] = False
+                lot.pop("bike_present_since", None)
                 if lot["status"] == "releasing":
                     lot["status"] = "free"
                     lot.pop("user_id", None)

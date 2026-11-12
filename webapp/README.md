@@ -3,7 +3,7 @@
 The cyclist and officer website for Smart Bicycle Parking. FastAPI serves HTML pages (Jinja2 templates, Tailwind, HTMX, Leaflet maps). It talks to AWS server-side with boto3: DynamoDB for data, IoT Core to send `open` commands to the ESP32, Cognito for logins. No API Gateway.
 
 - **Cyclists (phone):** map of stations with live free counts → tap a station → tap a free lot (or scan the lot's QR code) → **Use this lot** → later **Unlock**.
-- **Officers (desktop):** console with stations, utilisation, suspected abandoned bikes, tamper log and **Force unlock**.
+- **Officers (desktop):** console with stations, utilisation, suspected abandoned bikes, bikes parked without using the system, tamper log and **Force unlock**.
 
 Runs in two modes, set by `BACKEND` in `.env`:
 - `fake` (default): everything in memory, no AWS needed. Data resets when the server restarts.

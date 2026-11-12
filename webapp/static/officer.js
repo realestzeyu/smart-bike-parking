@@ -1,4 +1,4 @@
-// J7: stations map on the officer console. Pin = number of suspected abandoned bikes.
+// J7: stations map on the officer console. Pin = number of suspected abandoned + unregistered bikes.
 (function () {
   const map = L.map('console-map', { zoomControl: true, attributionControl: false, scrollWheelZoom: false });
   L.control.attribution({ position: 'bottomright', prefix: false }).addTo(map);
@@ -10,8 +10,9 @@
   const markers = {};
 
   function icon(s) {
-    const html = s.abandoned
-      ? '<span class="count-pin">' + s.abandoned + '</span>'
+    const n = s.abandoned + s.unregistered;
+    const html = n
+      ? '<span class="count-pin">' + n + '</span>'
       : '<span class="station-dot"></span>';
     return L.divIcon({ className: '', html: html, iconSize: null });
   }

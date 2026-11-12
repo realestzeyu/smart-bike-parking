@@ -24,5 +24,8 @@ TABLE_PREFIX = os.getenv("TABLE_PREFIX", "sbp-")
 COGNITO_USER_POOL_ID = os.getenv("COGNITO_USER_POOL_ID", "")
 COGNITO_CLIENT_ID = os.getenv("COGNITO_CLIENT_ID", "")
 
+# Officer console: a bike on a free lot longer than this = "unregistered bike" (demo 2; deployment e.g. 1440)
+UNREGISTERED_LIMIT_MINUTES = int(os.getenv("UNREGISTERED_LIMIT_MINUTES", "2"))
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")

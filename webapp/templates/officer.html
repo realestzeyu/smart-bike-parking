@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_officer_parts.html" import kpis, parked_table, tamper_table %}
+{% from "_officer_parts.html" import kpis, parked_table, unregistered_table, tamper_table %}
 {% block title %}Bicycle Parking Console{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -43,11 +43,11 @@
     <section class="card p-6 xl:col-span-3">
       <div class="flex flex-wrap items-baseline gap-x-3">
         <h2 class="text-xl font-semibold">Stations with abandoned bicycles</h2>
-        <p class="text-stone">Pin number = suspected abandoned bikes at that station</p>
+        <p class="text-stone">Pin number = suspected abandoned + unregistered bikes at that station</p>
       </div>
       <div id="console-map" class="mt-5 h-[420px] rounded bg-ground"></div>
       <ul class="mt-4 flex flex-wrap gap-6 text-stone">
-        <li class="flex items-center gap-2"><span class="dot bg-alert"></span>Suspected abandoned bikes</li>
+        <li class="flex items-center gap-2"><span class="dot bg-alert"></span>Suspected abandoned or unregistered bikes</li>
         <li class="flex items-center gap-2"><span class="dot bg-teal"></span>No abandoned bikes</li>
       </ul>
     </section>
@@ -58,11 +58,17 @@
   </div>
 
   <section class="card p-6">
+    <h2 class="text-xl font-semibold">Bicycles parked without using the system</h2>
+    <p class="text-stone">Bike detected in a free lot for over {{ unregistered_limit }}, with no owner on record. Candidates for removal.</p>
+    <div class="mt-4">{{ unregistered_table(unregistered) }}</div>
+  </section>
+
+  <section class="card p-6">
     <h2 class="text-xl font-semibold">Tamper log</h2>
     <div class="mt-4">{{ tamper_table(tamper) }}</div>
   </section>
 
-  <p class="text-sm text-stone">A bicycle counts as suspected abandoned once its owner has been sent an overstay reminder. Refreshes every 5 s.</p>
+  <p class="text-sm text-stone">A bicycle counts as suspected abandoned once its owner has been sent an overstay reminder, and as unregistered when it sits in a free lot past the limit without anyone using the lot. Refreshes every 5 s.</p>
 </main>
 
 <div hx-get="/officer/data" hx-trigger="every 5s" hx-swap="none" aria-hidden="true"></div>
