@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_officer_parts.html" import help, kpis, parked_table, unregistered_table, tamper_table %}
+{% from "_officer_parts.html" import help, kpis, clear_header, parked_table, unregistered_table, tamper_table %}
 {% from "_officer_history.html" import history_card %}
 {% block title %}Bicycle Parking Console{% endblock %}
 {% block head %}
@@ -25,7 +25,7 @@
   <section class="card border-alert p-5 flex flex-wrap items-center justify-between gap-4" role="alertdialog" aria-labelledby="confirm-title">
     <div>
       <h2 id="confirm-title" class="font-semibold text-lg">Force unlock {{ confirm.where }}?</h2>
-      <p class="text-stone">This opens the lock for whoever is at the rack and ends {{ confirm.owner }}'s parking. Check the person's identity first.</p>
+      <p class="text-stone">This opens the lock so the bike can be removed, and ends {{ confirm.owner }}'s parking.</p>
     </div>
     <div class="flex gap-3">
       <a href="/officer" class="btn-small">Keep locked</a>
@@ -54,20 +54,24 @@
 
   {{ history_card(history) }}
 
-  <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
-    <section class="card p-6">
-      <h2 class="text-xl font-semibold">Longest parked {{ help("Bikes parked through the app, longest first. Abandoned? = the owner overstayed and was sent a reminder. Force unlock only after checking the person's ID.") }}</h2>
-      <div class="mt-4">{{ parked_table(parked) }}</div>
-    </section>
-    <section class="card p-6">
-      <h2 class="text-xl font-semibold">Unregistered bikes {{ help("A bike detected in a free lot for over " ~ unregistered_limit ~ " without anyone using the lot. Candidates for removal.", end=True) }}</h2>
-      <div class="mt-4">{{ unregistered_table(unregistered) }}</div>
-    </section>
-  </div>
+  {# Bikes to clear = suspected abandoned + unregistered. The scroll boxes sit outside the 5 s swaps, so scrolling survives a refresh. #}
+  <section id="to-clear" class="card border-orange bg-[#FCFCFA] p-6 space-y-5">
+    {{ clear_header(kpi) }}
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      <section id="abandoned-bikes" class="card p-6">
+        <h2 class="text-xl font-semibold">Suspected abandoned bikes {{ help("Parked through the app past the time limit; the owner was sent a reminder. All of them, longest first. Force unlock to remove the bike, after checking it's the right one.") }}</h2>
+        <div class="mt-4 max-h-[440px] overflow-y-auto">{{ parked_table(abandoned) }}</div>
+      </section>
+      <section id="unregistered-bikes" class="card p-6">
+        <h2 class="text-xl font-semibold">Unregistered bikes {{ help("A bike detected in a free lot for over " ~ unregistered_limit ~ " without anyone using the lot. Candidates for removal.", end=True) }}</h2>
+        <div class="mt-4 max-h-[440px] overflow-y-auto">{{ unregistered_table(unregistered) }}</div>
+      </section>
+    </div>
+  </section>
 
-  <section class="card p-6">
+  <section id="tamper-log" class="card border-alert p-6">
     <h2 class="text-xl font-semibold">Tamper log {{ help("Latest 20 alerts: lock vibration, or a bike that left without an unlock (suspected theft). A lot shows red on the map while the bike parked there has an alert.") }}</h2>
-    <div class="mt-4">{{ tamper_table(tamper) }}</div>
+    <div class="mt-4 max-h-[440px] overflow-y-auto">{{ tamper_table(tamper) }}</div>
   </section>
 </main>
 

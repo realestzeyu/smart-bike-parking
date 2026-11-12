@@ -37,7 +37,7 @@ class FakeBackend(Backend):
         self.lots = {(l["space_id"], l["id"]): dict(l) for l in LOTS + sim_lots}
         self.sessions = {s["id"]: dict(s) for s in sim_sessions}
         self.flag_overstays(3 * 1440)  # simulated bikes parked over 3 days start as suspected abandoned
-        past_sessions, past_tamper = simulated_history(sim_lots)  # last 24 h, for the officer charts
+        past_sessions, past_tamper = simulated_history(sim_lots)  # last 30 days, for the officer charts
         self.sessions.update({s["id"]: s for s in past_sessions})
         self.tamper_events = {e["id"]: e for e in past_tamper}
         self.published = []  # (lot_id, payload) log of open commands

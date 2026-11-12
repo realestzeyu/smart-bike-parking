@@ -67,7 +67,7 @@ def console_data():
 
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
     tamper = b.list_tamper_events()
-    for e in tamper:
+    for e in tamper[:20]:  # only the shown rows need where/owner (one GetItem each on AWS)
         session = b.get_session(e["session_id"]) if e.get("session_id") else None
         e.update(where=where(e["lot_id"]), owner=name_of(session["user_id"]) if session else None)
 
@@ -112,6 +112,7 @@ def console_data():
             "last_tamper": tamper[0]["detected_time"] if tamper else None,
         },
         "parked": parked,
+        "abandoned": [s for s in parked if s["abandoned"]],  # suspected abandoned, longest first (Force unlock list)
         "unregistered": unregistered,
         "tamper": tamper[:20],
         "stations": stations,
@@ -124,16 +125,20 @@ def _hour_label(t):
     return f"{h % 12 or 12} {'am' if h < 12 else 'pm'}"
 
 
-RANGES = {24: 1, 72: 3, 168: 6}  # time range (hours) -> bucket size (hours)
+RANGES = {24: 1, 168: 6, 720: 24}  # time range (hours) -> bucket size (hours): last 24 h, 7 days, month
 
 
 def _when(t, hours):
-    """Bucket label in SGT: '9 am' for 24 h, 'Wed 9 am' for longer ranges."""
-    return _hour_label(t) if hours == 24 else f"{t.astimezone(SGT):%a} {_hour_label(t)}"
+    """Bucket label in SGT: '9 am' for 24 h, 'Wed 9 am' for 7 days, 'Wed 12 Nov' for the month."""
+    s = t.astimezone(SGT)
+    if hours == 24:
+        return _hour_label(t)
+    return f"{s:%a} {_hour_label(t)}" if hours == 168 else f"{s:%a} {s.day} {s:%b}"
 
 
 def history_data(space="all", hours=24, tamper=True):
-    """Usage & tamper chart: per time bucket, average share of lots in use (30-min samples) and tamper alerts.
+    """Usage & tamper chart on one count axis (0 .. number of lots): per time bucket, the average number
+    of lots in use (sampled every 30 min, every 2 h for the month) and the tamper alerts drawn over it.
     Usage counts parkings made through the app (unregistered bikes leave no history)."""
     b = get_backend()
     spaces = sorted(b.list_spaces(), key=lambda s: s["id"])
@@ -142,6 +147,7 @@ def history_data(space="all", hours=24, tamper=True):
     if hours not in RANGES:
         hours = 24
     size = RANGES[hours]
+    step = 120 if hours == 720 else 30  # sample interval (minutes)
     mine = (lambda lot_id: True) if space == "all" else (lambda lot_id: lot_id.startswith(space + "#"))
 
     now = datetime.now(timezone.utc)
@@ -152,39 +158,43 @@ def history_data(space="all", hours=24, tamper=True):
     total = sum(len(b.list_lots(s["id"])) for s in spaces if space in ("all", s["id"])) or 1
     sessions = [(parse_iso(s["start_time"]), parse_iso(s["end_time"]) if s.get("end_time") else None)
                 for s in b.list_sessions_since(starts[0].strftime("%Y-%m-%dT%H:%M:%SZ")) if mine(s["lot_id"])]
-    alerts = [parse_iso(e["detected_time"]) for e in b.list_tamper_events() if mine(e["lot_id"])]
+    alerts = [parse_iso(e["detected_time"]) for e in b.list_tamper_events() if mine(e["lot_id"])] if tamper else []
 
-    # SVG 960 wide: usage panel y 12..172, tamper panel y 200..250, x labels below. Plot x 44..948.
+    buckets = []
+    for s0 in starts:
+        s1 = s0 + timedelta(hours=size)
+        samples = [s0 + timedelta(minutes=step // 2 + step * i) for i in range(size * 60 // step)]
+        samples = [t for t in samples if t <= now] or [now]
+        used = sum(sum(1 for a, z in sessions if a <= t and (z is None or z > t)) for t in samples) / len(samples)
+        buckets.append((s0, used, sum(1 for t in alerts if s0 <= t < s1)))
+    top = max([total] + [count for _, _, count in buckets])  # one y-scale for lots and alerts
+
+    # SVG 960 x 204: plot x 44..948, y 12..172 (value 0 at 172, `top` at 12), x labels at y 192.
     slot = 904 / n
     width = round(slot * 0.72, 1)
-    top_t = 1
     cols = []
-    for j, s0 in enumerate(starts):
-        s1 = s0 + timedelta(hours=size)
-        samples = [s0 + timedelta(minutes=15 + 30 * i) for i in range(size * 2)]
-        samples = [t for t in samples if t <= now] or [now]
-        pct = round(sum(sum(1 for a, z in sessions if a <= t and (z is None or z > t)) for t in samples) * 100 / (len(samples) * total))
-        count = sum(1 for t in alerts if s0 <= t < s1)
-        top_t = max(top_t, count)
+    for j, (s0, used, count) in enumerate(buckets):
+        local = s0.astimezone(SGT)
         x = round(44 + j * slot + (slot - width) / 2, 1)
-        h = round(160 * pct / 100, 1)
+        h = round(160 * used / top, 1)
         r = min(4, h, width / 2)
         bar = (f"M{x},172 V{172 - h + r} Q{x},{172 - h} {x + r},{172 - h} H{round(x + width - r, 1)} "
                f"Q{x + width},{172 - h} {x + width},{172 - h + r} V172 Z") if h else ""
         label = ""
-        if (hours == 24 and s0.astimezone(SGT).hour % 6 == 0) or (hours == 72 and s0.astimezone(SGT).hour % 12 == 0)                 or (hours == 168 and s0.astimezone(SGT).hour == 0):
-            label = _hour_label(s0) if hours == 24 else (f"{s0.astimezone(SGT):%a}" if s0.astimezone(SGT).hour == 0 else _hour_label(s0))
-        cols.append({"x": x, "cx": round(x + width / 2, 1), "bar": bar, "pct": pct, "count": count, "label": label,
-                     "tip": f"{_when(s0, hours)} · {pct}% used" + (f" · {count} tamper" if tamper else "")})
-    for c in cols:
-        c["ty"] = round(250 - 50 * c["count"] / top_t, 1)
+        if hours == 24 and local.hour % 6 == 0:
+            label = _hour_label(s0)
+        elif hours == 168 and local.hour == 0:
+            label = f"{local:%a}"
+        elif hours == 720 and local.weekday() == 0:  # Mondays
+            label = f"{local.day} {local:%b}"
+        cols.append({"x": x, "cx": round(x + width / 2, 1), "bar": bar, "count": count, "label": label,
+                     "ty": round(172 - 160 * count / top, 1),
+                     "tip": f"{_when(s0, hours)} · {round(used)} of {total} lots in use" + (f" · {count} tamper" if tamper else "")})
     return {
-        "space": space, "hours": hours, "tamper": tamper, "top": top_t, "cols": cols,
+        "space": space, "hours": hours, "tamper": tamper, "total": total, "cols": cols,
+        "ticks": [{"v": v, "y": round(172 - 160 * v / top, 1)} for v in sorted({0, top // 2, top})],
         "spaces": [{"id": s["id"], "address": s["address"]} for s in spaces],
         "tamper_line": " ".join(f"{'M' if i == 0 else 'L'}{c['cx']},{c['ty']}" for i, c in enumerate(cols)),
-        "height": 284 if tamper else 204,
-        "label_y": 272 if tamper else 192,
-        "total_tamper": sum(c["count"] for c in cols),
     }
 
 
@@ -192,7 +202,7 @@ def history_data(space="all", hours=24, tamper=True):
 def console(request: Request, confirm: str = "", done: str = "", failed: str = ""):
     user = require_officer(request)
     data = console_data()
-    pending = next((s for s in data["parked"] if s["ref"] == confirm), None)
+    pending = next((s for s in data["abandoned"] if s["ref"] == confirm), None)
     m = config.UNREGISTERED_LIMIT_MINUTES
     limit = f"{m // 1440} day{'' if m // 1440 == 1 else 's'}" if m >= 1440 and m % 1440 == 0 else f"{m} min"
     return templates.TemplateResponse(request, "officer.html", {

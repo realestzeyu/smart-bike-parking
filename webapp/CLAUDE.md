@@ -19,7 +19,7 @@ Customer journey maps: **`design/JOURNEYMAP.md`**. follow the flows of the user 
 | `/login`, `/signup` | anyone | Username + password (sign-up also asks for email; cyclists only). Redirect back to where the user came from (`?next=`) |
 | `/profile` | anyone | Logged in: name, role, Connect Telegram, officer console link, **Log out**. Logged out: Log in / Create an account |
 | `/connect-telegram` | logged-in cyclist | Part of sign-up: open `t.me/<bot>?start=<code>`, then **Done** → `getUpdates` → save `telegram_chat_id`. Can be skipped and done later |
-| `/officer` | role = officer | Lock states, open sessions, overstays (`overstay_notified_at`; open sessions via the `open-sessions` index), unregistered bikes (free lot + `bike_present_since` older than `UNREGISTERED_LIMIT_MINUTES`), "Usage & tamper" chart (`/officer/history?space=&hours=24|72|168&tamper=on`, on filter change + every 60 s), tamper log, occupancy, **Force unlock** |
+| `/officer` | role = officer | Lock states, "Bikes to clear" = suspected abandoned bikes (`overstay_notified_at`; open sessions via the `open-sessions` index; all listed, Force unlock only here) + unregistered bikes (free lot + `bike_present_since` older than `UNREGISTERED_LIMIT_MINUTES`), "Usage & tamper" chart (lots in use + tamper on one lot-count axis; `/officer/history?space=&hours=24|168|720&tamper=on`, on filter change + every 60 s), tamper log, occupancy, **Force unlock** |
 | `/dev` | only when `BACKEND=fake` | Buttons to simulate `bike_arrived`, `bike_left`, `tamper` per lot, and "Run overstay check". Fake mode also sends `bike_left` by itself ~8 s after an Unlock |
 
 QR link format: `http://<laptop-ip>:8000/lot/space1_lot3`.

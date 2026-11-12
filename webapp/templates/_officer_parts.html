@@ -8,7 +8,7 @@
 {% macro kpis(kpi, usage, oob=False) %}
 {% if not oob %}<section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">{% endif %}
   <div id="kpi-util" {% if oob %}hx-swap-oob="true"{% endif %} class="card p-6 min-h-[210px] flex flex-col">
-    <h2 class="font-semibold">Utilisation {{ help("Share of all lots with a bike in them right now, including abandoned and unregistered bikes. Hover the bar for the split; colours are the same as on the map.") }}</h2>
+    <h2 class="font-semibold">Total utilisation {{ help("Share of all lots with a bike in them right now, including abandoned and unregistered bikes. Hover the bar for the split; colours are the same as on the map.") }}</h2>
     <p class="mt-2 flex flex-wrap items-baseline gap-x-3"><span class="text-5xl font-semibold">{{ kpi.utilisation }}%</span><span class="text-stone">{{ kpi.used }} of {{ kpi.lots }} lots used</span></p>
     <div class="seg mt-auto pt-4" tabindex="0" aria-label="{% for p in kpi.parts %}{{ p.label }} {{ p.n }}{{ ', ' if not loop.last }}{% endfor %}">
       <div class="seg-bar">{% for p in kpi.parts if p.n %}<span style="flex: {{ p.n }}; background: {{ p.colour }}"></span>{% endfor %}</div>
@@ -24,42 +24,49 @@
   {% else %}{{ usage_bars(usage, oob=True) }}{% endif %}
   {% set clear = kpi.abandoned + kpi.unregistered %}
   <div id="kpi-clear" {% if oob %}hx-swap-oob="true"{% endif %} class="card p-6 min-h-[210px] {{ 'bg-orange-soft border-orange' if clear else '' }}">
-    <h2 class="font-semibold">Bikes to clear {{ help("Overstayed: a cyclist parked past the time limit and was sent a reminder. Unregistered: a bike sat in a free lot past the limit without anyone using the lot. Both are listed below the map.") }}</h2>
+    <h2 class="font-semibold">Bikes to clear {{ help("Suspected abandoned: a cyclist parked past the time limit and was sent a reminder. Unregistered: a bike sat in a free lot past the limit without anyone using the lot. Both lists are under Bikes to clear, below the chart.") }}</h2>
     <p class="mt-2 text-5xl font-semibold {{ 'text-orange' if clear }}">{{ clear }}</p>
-    <p class="mt-3 {{ '' if clear else 'text-stone' }}">{% if clear %}{{ kpi.abandoned }} overstayed · {{ kpi.unregistered }} unregistered{% else %}Nothing to clear{% endif %}</p>
+    <p class="mt-3 {{ '' if clear else 'text-stone' }}">{% if clear %}<a href="#to-clear" class="underline underline-offset-2 hover:text-orange whitespace-nowrap">{{ kpi.abandoned }} abandoned · {{ kpi.unregistered }} unregistered ↓</a>{% else %}Nothing to clear{% endif %}</p>
   </div>
   <div id="kpi-tamper" {% if oob %}hx-swap-oob="true"{% endif %} class="card p-6 min-h-[210px] {{ 'bg-alert-soft border-alert' if kpi.tamper_week else '' }}">
     <h2 class="font-semibold {{ 'text-alert' if kpi.tamper_week }}">Tamper (7 days) {{ help("Alerts from the lock's vibration sensor, or a bike that left without an unlock (suspected theft). The owner gets a Telegram alert if linked. Full list in the tamper log.", end=True) }}</h2>
     <p class="mt-2 text-5xl font-semibold {{ 'text-alert' if kpi.tamper_week }}">{{ kpi.tamper_week }}</p>
-    <p class="mt-3 {{ 'text-alert' if kpi.tamper_week else 'text-stone' }}">{% if kpi.tamper_week %}Latest {{ kpi.last_tamper | sgt_datetime }}{% else %}None this week{% endif %}</p>
+    <p class="mt-3 {{ 'text-alert' if kpi.tamper_week else 'text-stone' }}">{% if kpi.tamper_week %}{% set ago = kpi.last_tamper | parked_for %}Last alert {{ 'just now' if ago == '0 min' else ago ~ ' ago' }} · {{ kpi.last_tamper | sgt_datetime if 'day' in ago else kpi.last_tamper | sgt_time }}{% else %}None this week{% endif %}</p>
+    <p class="mt-1"><a href="#tamper-log" class="underline underline-offset-2 {{ 'text-alert' if kpi.tamper_week else 'text-teal' }}">View tamper log ↓</a></p>
   </div>
 {% if not oob %}</section>{% endif %}
 {% endmacro %}
 
-{% macro parked_table(parked, oob=False, shown=8) %}
+{# Title of the big "Bikes to clear" box on row 4: it holds both lists below it. #}
+{% macro clear_header(kpi, oob=False) %}
+{% set clear = kpi.abandoned + kpi.unregistered %}
+<div id="clear-head" {% if oob %}hx-swap-oob="true"{% endif %}>
+  <h2 class="flex flex-wrap items-baseline gap-x-4"><span class="text-3xl font-semibold">Bikes to clear</span><span class="text-5xl font-semibold {{ 'text-orange' if clear else 'text-stone' }}">{{ clear }}</span></h2>
+  <p class="mt-1 text-lg {{ '' if clear else 'text-stone' }}">{% if clear %}{{ kpi.abandoned }} suspected abandoned + {{ kpi.unregistered }} unregistered{% else %}Nothing to clear{% endif %}</p>
+</div>
+{% endmacro %}
+
+{# Suspected abandoned bikes (all of them, longest first). Force unlock = the officer clears the bike. #}
+{% macro parked_table(parked, oob=False) %}
 <div id="parked" {% if oob %}hx-swap-oob="true"{% endif %}>
   {% if parked %}
   <table class="w-full text-left">
-    <thead class="text-stone text-sm">
+    <thead class="text-stone text-sm sticky-head">
       <tr class="border-b border-stone-line"><th class="py-2 pr-3 font-medium whitespace-nowrap">Space · lot</th><th class="py-2 pr-3 font-medium whitespace-nowrap">Parked for</th><th class="py-2 pr-3 font-medium">Status</th><th class="py-2"><span class="sr-only">Action</span></th></tr>
     </thead>
     <tbody>
-      {% for s in parked[:shown] %}
+      {% for s in parked %}
       <tr class="border-b border-stone-line align-middle">
         <td class="py-3 pr-3"><span class="font-medium">{{ s.lot_label }}</span><span class="block text-sm text-stone">{{ s.station }} · {{ s.owner }}</span></td>
         <td class="py-3 pr-3 font-mono whitespace-nowrap {{ 'font-semibold' if s.abandoned else '' }}">{{ s.start_time | parked_for }}</td>
-        <td class="py-3 pr-3">
-          {% if s.abandoned %}<span class="badge bg-orange text-ink">Abandoned?</span>
-          {% else %}<span class="badge bg-[#EFEDE7] text-stone">Parked</span>{% endif %}
-        </td>
+        <td class="py-3 pr-3"><span class="badge bg-orange text-ink">Abandoned?</span></td>
         <td class="py-3 text-right"><a href="/officer?confirm={{ s.ref }}" class="btn-small whitespace-nowrap">Force unlock</a></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  {% if parked | length > shown %}<p class="mt-3 text-stone">Showing the {{ shown }} longest of {{ parked | length }} parked bicycles.</p>{% endif %}
   {% else %}
-  <p class="text-stone">No bicycles parked right now.</p>
+  <p class="text-stone">No suspected abandoned bikes.</p>
   {% endif %}
 </div>
 {% endmacro %}
@@ -82,7 +89,7 @@
 <div id="unregistered" {% if oob %}hx-swap-oob="true"{% endif %}>
   {% if rows %}
   <table class="w-full text-left">
-    <thead class="text-stone text-sm">
+    <thead class="text-stone text-sm sticky-head">
       <tr class="border-b border-stone-line"><th class="py-2 pr-4 font-medium">Space · lot</th><th class="py-2 pr-4 font-medium">There for</th><th class="py-2 pr-4 font-medium">Bike there since</th><th class="py-2 font-medium">Status</th></tr>
     </thead>
     <tbody>
@@ -106,7 +113,7 @@
 <div id="tamper" {% if oob %}hx-swap-oob="true"{% endif %}>
   {% if tamper %}
   <table class="w-full text-left">
-    <thead class="text-stone text-sm">
+    <thead class="text-stone text-sm sticky-head">
       <tr class="border-b border-stone-line"><th class="py-2 pr-4 font-medium">Time</th><th class="py-2 pr-4 font-medium">Space · lot</th><th class="py-2 pr-4 font-medium">Bike owner</th><th class="py-2 font-medium">Telegram alert</th></tr>
     </thead>
     <tbody>

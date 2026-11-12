@@ -215,3 +215,8 @@ body.detail-open #locate { display: none; }
   color: #1F1F1C;
   white-space: nowrap;
 }
+
+/* Officer console: jump links from the KPI cards scroll smoothly and stop just above the card. */
+html { scroll-behavior: smooth; }
+#to-clear, #abandoned-bikes, #unregistered-bikes, #tamper-log { scroll-margin-top: 16px; }
+.sticky-head th { position: sticky; top: 0; z-index: 1; background: #fff; } /* column names stay visible in the scroll boxes */

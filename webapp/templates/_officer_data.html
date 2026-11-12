@@ -1,5 +1,6 @@
-{% from "_officer_parts.html" import kpis, parked_table, unregistered_table, tamper_table %}
+{% from "_officer_parts.html" import kpis, clear_header, parked_table, unregistered_table, tamper_table %}
 {{ kpis(kpi, usage, oob=True) }}
-{{ parked_table(parked, oob=True) }}
+{{ clear_header(kpi, oob=True) }}
+{{ parked_table(abandoned, oob=True) }}
 {{ unregistered_table(unregistered, oob=True) }}
 {{ tamper_table(tamper, oob=True) }}

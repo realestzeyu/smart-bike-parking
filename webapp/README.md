@@ -42,9 +42,9 @@ Open http://127.0.0.1:8000. Auto-reload (`--reload`) doesn't work reliably on Wi
 ## Demo walk-through (fake mode)
 1. `/dev` → Upper Changi MRT Exit C, Lot 1 → **bike_arrived** (a bike is now in the lot).
 2. Phone: `/` → tap the "1 free" pin → tap lot **1** → **Use this lot** → sign up → Skip Telegram → **Use this lot** → "Lock released … Open signal sent at …" → **Done**.
-3. Laptop: Profile → Log out → log in as `officer` → `/officer`. The bike shows in Longest-parked. On `/dev` press **tamper**: it appears in the Tamper log within 5 s.
+3. Laptop: Profile → Log out → log in as `officer` → `/officer`. After 2 min, `/dev` → **Run overstay check** moves the bike to Suspected abandoned bikes. On `/dev` press **tamper**: it appears in the Tamper log within 5 s.
 4. Phone: open the lot page again → **Unlock** → "Unlocked. Please take your bike…". About 8 s later the fake backend reports `bike_left` by itself (as if you took the bike): the lot is free again and the map pin updates. With real hardware the IR sensor does this.
-5. Force unlock: in the console, **Force unlock** on any row → confirm.
+5. Force unlock (officer clears an abandoned bike): in the console, Suspected abandoned bikes → **Force unlock** on a row → confirm.
 
 The 3 extra stations (Exit A, Exit B, SUTD Campus Centre, 20 lots each) are simulated: they make the map and console look like a real network. Only `space1#lot1` has hardware.
 

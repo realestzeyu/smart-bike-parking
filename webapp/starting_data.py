@@ -71,7 +71,7 @@ def simulated_rows(now=None):
     return spaces, lots, sessions
 
 
-# ---- Fake mode only: the last 24 h of history, so the officer's 24 h charts aren't empty ----
+# ---- Fake mode only: the last 30 days of history, so the officer charts (24 h / 7 days / month) aren't empty ----
 # Not loaded into DynamoDB (times are relative to "now" and would go stale; real use fills AWS).
 # Commuter shape in Singapore time: parkings started per hour, and how long they last (minutes).
 _STARTS_BY_SGT_HOUR = {6: 1, 7: 3, 8: 4, 9: 2, 11: 1, 12: 2, 13: 1, 15: 1, 17: 2, 18: 2, 19: 1, 20: 1}
@@ -83,7 +83,7 @@ def _duration_minutes(sgt_hour, k):
     return 90 + (k * 23) % 90  # short visits
 
 
-def simulated_history(lots, now=None, days=7):
+def simulated_history(lots, now=None, days=30):
     """(closed sessions, tamper events) from the last `days` days, on simulated lots. Fake backend only."""
     now = now or datetime.now(timezone.utc)
     spare = [l["id"] for l in lots if l["status"] == "free" and not l["bike_present"] and not l["id"].startswith("space1#")]
@@ -104,9 +104,9 @@ def simulated_history(lots, now=None, days=7):
             sessions.append({"id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"sbp-history/{k}")), "lot_id": lot_id,
                              "user_id": DEMO_USER["id"], "start_time": _iso(start), "end_time": _iso(end)})
     taken = next((l for l in lots if l["status"] == "taken" and l["id"].startswith("space4#")), None)
-    # Spread over the week (hours ago), mostly at night; the last one is on a bike still parked.
+    # Spread over the month (hours ago), mostly at night; the last one is on a bike still parked.
     tamper = [{"lot_id": spare[i % len(spare)], "minutes_ago": h * 60 + 20}
-              for i, h in enumerate([150, 122, 98, 74, 51, 26, 21, 14])]
+              for i, h in enumerate([670, 600, 530, 455, 380, 310, 240, 150, 122, 98, 74, 51, 26, 21, 14])]
     tamper.append({"lot_id": taken["id"], "session_id": taken["session_id"], "minutes_ago": 140} if taken else None)
     events = [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"sbp-history/tamper/{i}")), "lot_id": t["lot_id"],
                "detected_time": _iso(now - timedelta(minutes=t["minutes_ago"])), "notified": "session_id" in t,
