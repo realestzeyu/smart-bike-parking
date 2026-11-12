@@ -10,13 +10,15 @@ import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import boto3
 
 SGT = timezone(timedelta(hours=8))  # Singapore has no daylight saving
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 
-_dynamodb = None
+# Any: boto3 builds resource attributes (e.g. .Table) at runtime, so type checkers can't see them.
+_dynamodb: Any = None
 
 
 # ---------- time ----------

@@ -3,6 +3,7 @@
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any
 
 import boto3
 import pytest
@@ -17,6 +18,7 @@ import sbp_common  # noqa: E402
 def load_handler(name: str):
     """Both Lambdas have a handler.py, so load each under its own module name."""
     spec = importlib.util.spec_from_file_location(f"{name}_handler", LAMBDAS / name / "handler.py")
+    assert spec is not None and spec.loader is not None, f"cannot load lambdas/{name}/handler.py"
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -66,7 +68,7 @@ def db(monkeypatch):
     monkeypatch.setenv("OVERSTAY_LIMIT_MINUTES", "2")
     with mock_aws():
         sbp_common.reset_clients()
-        dynamodb = boto3.resource("dynamodb")
+        dynamodb: Any = boto3.resource("dynamodb")  # Any: .Table is built at runtime
         create_tables(dynamodb.meta.client)
         dynamodb.Table("sbp-spaces").put_item(Item={"id": "space1", "address": "Bedok MRT Exit A"})
         dynamodb.Table("sbp-users").put_item(
