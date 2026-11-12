@@ -1,7 +1,6 @@
 """Test setup: fake DynamoDB (moto) with the same tables/keys as infra/dynamodb.tf, and a fake Telegram."""
 
 import importlib.util
-import os
 import sys
 from pathlib import Path
 

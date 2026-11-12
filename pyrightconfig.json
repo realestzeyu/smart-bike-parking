@@ -1,0 +1,6 @@
+{
+  "//": "Editor only (Pylance/Pyright): sbp_common lives in lambdas/shared but is zipped next to each handler.py at deploy time.",
+  "executionEnvironments": [
+    { "root": "lambdas", "extraPaths": ["lambdas/shared"] }
+  ]
+}
