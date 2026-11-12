@@ -162,7 +162,14 @@ CloudWatch Logs Insights queries over these give event counts, alert success rat
 - **Test data:** `infra/test_data.sh` puts `space1`, `space1#lot1` and a test user (create-only), plus a reset. Replaced later by `webapp/load_starting_data.py`.
 - **End-to-end on AWS:** `aws iot-data publish` events, simulate claim/unlock with CLI writes, check DynamoDB, logs and Telegram.
 
-## Changes needed when building
+## Where the code is (built 12 Nov)
 
-- `infra/lambdas.tf`: add `GetItem` on `sbp-spaces` for both Lambdas.
-- `lambdas/handle_event/handler.py`, `lambdas/check_overstay/handler.py`: replace the placeholders.
+| File | Contents |
+|---|---|
+| `lambdas/handle_event/handler.py` | diagram 2 + the race retry (diagram 7) |
+| `lambdas/check_overstay/handler.py` | diagram 3 |
+| `lambdas/shared/sbp_common.py` | time, JSON logging, DynamoDB tables, Telegram helper (diagram 4); zipped into both Lambdas by `infra/lambdas.tf` |
+| `lambdas/tests/` | 22 unit tests (pytest + moto) |
+| `infra/test_data.sh` | test data + web-app stand-ins (`load`, `claim`, `unlock`, `show`, `reset`) |
+
+Run the unit tests (from `lambdas/`): `python -m venv .venv`, install `requirements-dev.txt`, then `python -m pytest tests -q`. See `infra/README.md` for the end-to-end test on AWS.

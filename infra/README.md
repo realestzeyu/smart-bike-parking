@@ -14,7 +14,7 @@ Tables, fields, topics and payloads are defined in [`../docs/agreed-names-and-fo
 |---|---|
 | `dynamodb.tf` | 5 on-demand tables: `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions` (+ `by-lot`, `by-user` and sparse `open-sessions` indexes), `sbp-tamper-events` |
 | `iot.tf` | For each parking space: an IoT thing (`space1`), its certificate (saved to `../certs/space1/`) and device policy. Plus a rule that sends every `<space>/<lot>/event` message to `handle_event` |
-| `lambdas.tf` | `sbp-handle-event` and `sbp-check-overstay` (Python 3.13), zipped from `../lambdas/`, each with its own least-privilege role and 7-day logs |
+| `lambdas.tf` | `sbp-handle-event` and `sbp-check-overstay` (Python 3.13), each zipped from `../lambdas/<name>/handler.py` + `../lambdas/shared/sbp_common.py`, each with its own least-privilege role and 7-day logs |
 | `scheduler.tf` | EventBridge Scheduler that runs `check_overstay` (every minute for the demo; can be switched off) |
 | `cognito.tf` | Cognito user pool `sbp-users` (Lite tier; usernames, passwords, reset email; emails only password-reset codes) and public app client `sbp-webapp` (`USER_PASSWORD_AUTH`) |
 | `webapp_iam.tf` | IAM user `sbp-webapp`: DynamoDB on the 5 tables, `iot:Publish` on `space*/*/cmd` only, and 5 Cognito admin calls on the user pool |
@@ -131,22 +131,38 @@ ls ../certs/space1/        # certificate.pem.crt, private.pem.key
 ```
 Expect the 5 `sbp-` tables, both Lambdas, `ENABLED`.
 
-**b) A device event reaches `handle_event`**
+**b) End-to-end: device events drive the Lambdas** (uses `test_data.sh`, which also stands in for the web app's claim / unlock)
 ```bash
+chmod +x test_data.sh
+TELEGRAM_CHAT_ID=<your chat id, optional> ./test_data.sh load    # space1, lot space1#lot1, user testcyclist
 EP=$(terraform output -raw iot_data_endpoint)
-aws iot-data publish --topic space1/lot1/event --cli-binary-format raw-in-base64-out \
-  --payload '{"type":"bike_arrived"}' --endpoint-url "https://$EP" $P
-sleep 8
-aws logs tail /aws/lambda/sbp-handle-event --since 5m $P
-```
-Expect a log line `{"type": "bike_arrived", "space": "space1", "lot": "lot1"}`.
-(Or use the console: **IoT Core → MQTT test client → Publish**.)
+pub() { aws iot-data publish --topic space1/lot1/event --cli-binary-format raw-in-base64-out \
+          --payload "{\"type\":\"$1\"}" --endpoint-url "https://$EP" $P; }
 
-**c) The overstay check runs every minute**
-```bash
-aws logs tail /aws/lambda/sbp-check-overstay --since 5m $P
+pub bike_arrived;  sleep 3; ./test_data.sh show   # bike_present true, bike_present_since set
+./test_data.sh claim                              # lot taken + open session
+pub tamper;        sleep 3; ./test_data.sh show   # tamper event with session_id (+ Telegram if linked)
+./test_data.sh unlock                             # lot releasing, session closed
+pub bike_left;     sleep 3; ./test_data.sh show   # lot free again: unlock confirmed
+aws logs tail /aws/lambda/sbp-handle-event --since 10m $P   # one JSON line per event
+./test_data.sh reset
 ```
-Expect `check_overstay ran, limit=2 min` once a minute.
+Suspected theft: `claim`, then `pub bike_left` (without `unlock`) → tamper event + "left without an unlock" alert.
+(Events can also be sent from the console: **IoT Core → MQTT test client → Publish**.)
+
+**c) The overstay check**
+```bash
+./test_data.sh claim; sleep 180                                   # older than the 2-minute demo limit
+aws logs tail /aws/lambda/sbp-check-overstay --since 5m $P          # "action": "flagged", then "run" lines
+./test_data.sh show                                               # session has overstay_notified_at
+./test_data.sh reset
+```
+
+**Unit tests** (no AWS needed), from `../lambdas`:
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt   # Windows: .venv\Scripts\...
+.venv/bin/python -m pytest tests -q                                      # 22 passed
+```
 
 **d) The web app key is limited correctly**
 ```bash
