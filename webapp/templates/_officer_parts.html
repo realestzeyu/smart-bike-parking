@@ -46,6 +46,9 @@
 </div>
 {% endmacro %}
 
+{# Live count beside a list title in the Bikes to clear box (refreshed by the 5 s poll). #}
+{% macro list_count(id, n, oob=False) %}<span id="{{ id }}" {% if oob %}hx-swap-oob="true"{% endif %} class="ml-1 text-2xl font-semibold {{ 'text-orange' if n else 'text-stone' }}">{{ n }}</span>{% endmacro %}
+
 {# Suspected abandoned bikes (all of them, longest first). Force unlock = the officer clears the bike. #}
 {% macro parked_table(parked, oob=False) %}
 <div id="parked" {% if oob %}hx-swap-oob="true"{% endif %}>

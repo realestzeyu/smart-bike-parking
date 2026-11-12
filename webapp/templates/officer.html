@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_officer_parts.html" import help, kpis, clear_header, parked_table, unregistered_table, tamper_table %}
+{% from "_officer_parts.html" import help, kpis, clear_header, list_count, parked_table, unregistered_table, tamper_table %}
 {% from "_officer_history.html" import history_card %}
 {% block title %}Bicycle Parking Console{% endblock %}
 {% block head %}
@@ -59,11 +59,11 @@
     {{ clear_header(kpi) }}
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
       <section id="abandoned-bikes" class="card p-6">
-        <h2 class="text-xl font-semibold">Suspected abandoned bikes {{ help("Parked through the app past the time limit; the owner was sent a reminder. All of them, longest first. Force unlock to remove the bike, after checking it's the right one.") }}</h2>
+        <h2 class="text-xl font-semibold">Suspected abandoned bikes {{ list_count("abandoned-count", kpi.abandoned) }} {{ help("Parked through the app past the time limit; the owner was sent a reminder. All of them, longest first. Force unlock to remove the bike, after checking it's the right one.") }}</h2>
         <div class="mt-4 max-h-[440px] overflow-y-auto">{{ parked_table(abandoned) }}</div>
       </section>
       <section id="unregistered-bikes" class="card p-6">
-        <h2 class="text-xl font-semibold">Unregistered bikes {{ help("A bike detected in a free lot for over " ~ unregistered_limit ~ " without anyone using the lot. Candidates for removal.", end=True) }}</h2>
+        <h2 class="text-xl font-semibold">Unregistered bikes {{ list_count("unregistered-count", kpi.unregistered) }} {{ help("A bike detected in a free lot for over " ~ unregistered_limit ~ " without anyone using the lot. Candidates for removal.", end=True) }}</h2>
         <div class="mt-4 max-h-[440px] overflow-y-auto">{{ unregistered_table(unregistered) }}</div>
       </section>
     </div>
