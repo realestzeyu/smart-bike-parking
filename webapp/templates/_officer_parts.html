@@ -3,34 +3,44 @@
 {# Small "?" after a title: hover or keyboard focus shows the full explanation. end=True for blocks at the right edge. #}
 {% macro help(tip, end=False) %}<button type="button" class="help{{ ' help-end' if end }}" data-tip="{{ tip }}" aria-label="{{ tip }}">?</button>{% endmacro %}
 
-{# KPI row: Utilisation · Usage by space · Bikes to clear · Tamper. On refresh (oob) only the changing parts are sent:
-   three whole cards, and the usage list inside its card (so its scroll position is kept). #}
+{# KPI row: Utilisation (Total | By space) · Bikes to clear · Tamper. On refresh (oob) only the changing parts are sent:
+   the Total panel, the per-space list (so its scroll position is kept) and two whole cards.
+   The Utilisation card shell and its pill toggle are never swapped, so the chosen view survives the refresh. #}
 {% macro kpis(kpi, usage, oob=False) %}
-{% if not oob %}<section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">{% endif %}
-  <div id="kpi-util" {% if oob %}hx-swap-oob="true"{% endif %} class="card p-6 min-h-[210px] flex flex-col">
-    <h2 class="font-semibold">Total utilisation {{ help("Share of all lots with a bike in them right now, including abandoned and unregistered bikes. Hover the bar for the split; colours are the same as on the map.") }}</h2>
-    <p class="mt-2 flex flex-wrap items-baseline gap-x-3"><span class="text-5xl font-semibold">{{ kpi.utilisation }}%</span><span class="text-stone">{{ kpi.used }} of {{ kpi.lots }} lots used</span></p>
+{% if not oob %}<section class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+  <div id="kpi-util-card" class="card p-6 min-h-[210px] flex flex-col">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <h2 class="font-semibold">Utilisation {{ help("Share of all lots with a bike in them right now, including abandoned and unregistered bikes. Total: hover the bar for the split. By space: busiest first, scroll for more. Colours are the same as on the map.") }}</h2>
+      <fieldset class="pill"><legend class="sr-only">Show utilisation</legend>
+        <input type="radio" name="util-view" id="util-total" class="sr-only" checked><label for="util-total">Total</label>
+        <input type="radio" name="util-view" id="util-by" class="sr-only"><label for="util-by">By space</label>
+      </fieldset>
+    </div>
+    {# Fixed-height body: both views fill it, so toggling never resizes the card (or the row). #}
+    <div class="mt-3 h-[132px]">
+    <div class="util-total h-full">{% endif %}
+  <div id="kpi-util" {% if oob %}hx-swap-oob="true"{% endif %} class="h-full flex flex-col">
+    <p class="flex flex-wrap items-baseline gap-x-3"><span class="text-[56px] leading-none font-semibold">{{ kpi.utilisation }}%</span><span class="text-stone">{{ kpi.used }} of {{ kpi.lots }} lots</span></p>
     <div class="seg mt-auto pt-4" tabindex="0" aria-label="{% for p in kpi.parts %}{{ p.label }} {{ p.n }}{{ ', ' if not loop.last }}{% endfor %}">
       <div class="seg-bar">{% for p in kpi.parts if p.n %}<span style="flex: {{ p.n }}; background: {{ p.colour }}"></span>{% endfor %}</div>
       <ul class="mt-2 flex flex-wrap gap-x-3 text-xs text-stone">{% for p in kpi.parts %}<li class="flex items-center gap-1"><span class="dot !w-2 !h-2" style="background: {{ p.colour }}"></span>{{ p.label }}</li>{% endfor %}</ul>
       <div class="seg-tip ring-tip"><strong>All parking spaces</strong><ul>{% for p in kpi.parts %}<li><span class="dot" style="background: {{ p.colour }}"></span>{{ p.label }}<b>{{ p.n }}</b></li>{% endfor %}</ul><p>{{ kpi.used }} of {{ kpi.lots }} lots used ({{ kpi.utilisation }}%)</p></div>
     </div>
   </div>
-  {% if not oob %}
-  <div class="card p-6 min-h-[210px] flex flex-col">
-    <h2 class="font-semibold">Usage by space {{ help("Lots used at each parking space right now, busiest first. Bar colours as in Utilisation: tamper, to clear, in use, free. Scroll for more spaces.") }}</h2>
-    <div class="mt-3 h-[126px] overflow-y-auto pr-2">{{ usage_bars(usage) }}</div>
+  {% if not oob %}</div>
+    <div class="util-by h-full overflow-y-auto pr-2">{{ usage_bars(usage) }}</div>
+    </div>
   </div>
   {% else %}{{ usage_bars(usage, oob=True) }}{% endif %}
   {% set clear = kpi.abandoned + kpi.unregistered %}
   <div id="kpi-clear" {% if oob %}hx-swap-oob="true"{% endif %} class="card p-6 min-h-[210px] {{ 'bg-orange-soft border-orange' if clear else '' }}">
     <h2 class="font-semibold">Bikes to clear {{ help("Suspected abandoned: a cyclist parked past the time limit and was sent a reminder. Unregistered: a bike sat in a free lot past the limit without anyone using the lot. Both lists are under Bikes to clear, below the chart.") }}</h2>
-    <p class="mt-2 text-5xl font-semibold {{ 'text-orange' if clear }}">{{ clear }}</p>
+    <p class="mt-2 text-[56px] leading-none font-semibold {{ 'text-orange' if clear }}">{{ clear }}</p>
     <p class="mt-3 {{ '' if clear else 'text-stone' }}">{% if clear %}<a href="#to-clear" class="underline underline-offset-2 hover:text-orange whitespace-nowrap">{{ kpi.abandoned }} abandoned · {{ kpi.unregistered }} unregistered ↓</a>{% else %}Nothing to clear{% endif %}</p>
   </div>
   <div id="kpi-tamper" {% if oob %}hx-swap-oob="true"{% endif %} class="card p-6 min-h-[210px] {{ 'bg-alert-soft border-alert' if kpi.tamper_week else '' }}">
     <h2 class="font-semibold {{ 'text-alert' if kpi.tamper_week }}">Tamper (7 days) {{ help("Alerts from the lock's vibration sensor, or a bike that left without an unlock (suspected theft). The owner gets a Telegram alert if linked. Full list in the tamper log.", end=True) }}</h2>
-    <p class="mt-2 text-5xl font-semibold {{ 'text-alert' if kpi.tamper_week }}">{{ kpi.tamper_week }}</p>
+    <p class="mt-2 text-[56px] leading-none font-semibold {{ 'text-alert' if kpi.tamper_week }}">{{ kpi.tamper_week }}</p>
     <p class="mt-3 {{ 'text-alert' if kpi.tamper_week else 'text-stone' }}">{% if kpi.tamper_week %}{% set ago = kpi.last_tamper | parked_for %}Last alert {{ 'just now' if ago == '0 min' else ago ~ ' ago' }} · {{ kpi.last_tamper | sgt_datetime if 'day' in ago else kpi.last_tamper | sgt_time }}{% else %}None this week{% endif %}</p>
     <p class="mt-1"><a href="#tamper-log" class="underline underline-offset-2 {{ 'text-alert' if kpi.tamper_week else 'text-teal' }}">View tamper log ↓</a></p>
   </div>

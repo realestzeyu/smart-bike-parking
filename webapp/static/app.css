@@ -145,6 +145,14 @@ body.detail-open #locate { display: none; }
 }
 .seg:hover .seg-tip, .seg:focus-visible .seg-tip { display: block; }
 .seg:focus-visible .seg-bar { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0F766E; }
+/* Utilisation card: "Total | By space" pill (two radios; CSS shows the chosen panel, no JS). */
+.pill { display: inline-flex; padding: 2px; border: 1px solid #E4E2DC; border-radius: 999px; background: #F6F5F1; font-size: 13px; }
+.pill label { padding: 3px 12px; border-radius: 999px; color: #6B6A63; cursor: pointer; white-space: nowrap; }
+.pill label:hover { color: #1F1F1C; }
+.pill input:checked + label { background: #0F766E; color: #fff; font-weight: 600; }
+.pill input:focus-visible + label { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0F766E; }
+#kpi-util-card:has(#util-by:checked) .util-total,
+#kpi-util-card:not(:has(#util-by:checked)) .util-by { display: none; }
 /* "?" help: hover or keyboard focus shows data-tip. */
 .help {
   position: relative;
