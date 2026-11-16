@@ -1,5 +1,5 @@
 // J7: map of parking spaces on the officer console. Pin = donut ring of the space's lots
-// (red tamper, orange to clear, green in use, grey free) with "used/total" in the middle; hover = breakdown.
+// (counter-clockwise from the top: green in use, orange to clear, red tamper, grey free) with "used/total" in the middle; hover = breakdown.
 (function () {
   const map = L.map('console-map', { zoomControl: true, attributionControl: false, scrollWheelZoom: false });
   L.control.attribution({ position: 'bottomright', prefix: false }).addTo(map);
@@ -12,9 +12,9 @@
 
   // Tooltip rows; colours match RING_COLOURS in pages/officer.py.
   const PARTS = [
-    ['tamper', '#B91C1C', 'Tamper'],
-    ['clear', '#FF6E00', 'To clear'],
     ['in_use', '#0F766E', 'In use'],
+    ['clear', '#FF6E00', 'To clear'],
+    ['tamper', '#B91C1C', 'Tamper'],
     ['free', '#D9D7D0', 'Free'],
   ];
 

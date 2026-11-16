@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_officer_parts.html" import help, kpis, clear_header, list_count, parked_table, unregistered_table, tamper_table %}
+{% from "_officer_parts.html" import help, kpis, clear_header, list_count, tamper_count, parked_table, unregistered_table, tamper_table %}
 {% from "_officer_history.html" import history_card %}
 {% block title %}Bicycle Parking Console{% endblock %}
 {% block head %}
@@ -44,11 +44,11 @@
     <h2 class="sr-only">Map of parking spaces</h2>
     <div id="console-map" class="h-[480px] rounded bg-ground"></div>
     <ul class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-stone">
-      <li class="flex items-center gap-2"><span class="dot bg-alert"></span>Tamper</li>
-      <li class="flex items-center gap-2"><span class="dot bg-orange"></span>To clear</li>
       <li class="flex items-center gap-2"><span class="dot bg-teal"></span>In use</li>
+      <li class="flex items-center gap-2"><span class="dot bg-orange"></span>To clear</li>
+      <li class="flex items-center gap-2"><span class="dot bg-alert"></span>Tamper</li>
       <li class="flex items-center gap-2"><span class="dot bg-[#D9D7D0]"></span>Free</li>
-      <li class="ml-auto">Pin: lots used / total {{ help("Each pin is a parking space. The ring shows its lots by state, counter-clockwise from the top: tamper, to clear (abandoned or unregistered), in use, free. Hover a pin for the counts. Refreshes every 5 s.", end=True) }}</li>
+      <li class="ml-auto">Pin: lots used / total {{ help("Each pin is a parking space: lots used / total. Ring, counter-clockwise from the top: in use, to clear, tamper, free. Hover a pin for the counts.", end=True) }}</li>
     </ul>
   </section>
 
@@ -70,8 +70,11 @@
   </section>
 
   <section id="tamper-log" class="card border-alert p-6">
-    <h2 class="text-xl font-semibold">Tamper log {{ help("Latest 20 alerts: lock vibration, or a bike that left without an unlock (suspected theft). A lot shows red on the map while the bike parked there has an alert.") }}</h2>
+    <h2 class="flex flex-wrap items-baseline gap-x-4"><span class="text-3xl font-semibold">Tamper log</span>{{ tamper_count(kpi.tamper_week) }}{{ help("Lock vibration, or a bike that left without an unlock (suspected theft). The lot is red on the map until that bike leaves.") }}</h2>
+    <p class="mt-1 text-lg text-stone">Last 7 days</p>
     <div class="mt-4 max-h-[440px] overflow-y-auto">{{ tamper_table(tamper) }}</div>
+    {# Outside the 5 s swap, so the choice survives the refresh; hidden by CSS when there are no older alerts. #}
+    <label class="older-toggle mt-4 inline-flex items-center gap-2 text-stone cursor-pointer"><input type="checkbox" id="tamper-all" class="accent-[#0F766E]"> Show older alerts</label>
   </section>
 </main>
 

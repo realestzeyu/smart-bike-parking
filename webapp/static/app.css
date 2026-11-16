@@ -228,3 +228,7 @@ body.detail-open #locate { display: none; }
 html { scroll-behavior: smooth; }
 #to-clear, #abandoned-bikes, #unregistered-bikes, #tamper-log { scroll-margin-top: 16px; }
 .sticky-head th { position: sticky; top: 0; z-index: 1; background: #fff; } /* column names stay visible in the scroll boxes */
+/* Tamper log: rows older than 7 days only while "Show older alerts" is ticked; the tick box hides when there are none. */
+#tamper-log:not(:has(#tamper-all:checked)) tr.old,
+#tamper-log:not(:has(#tamper-all:checked)) table.only-old,
+#tamper-log:not(:has(tr.old)) .older-toggle { display: none; }

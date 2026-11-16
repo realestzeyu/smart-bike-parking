@@ -14,18 +14,19 @@ from templating import SGT, parse_iso, templates
 router = APIRouter()
 
 # Lot states and their colours (same meaning on pins, KPI donut, legend and badges).
-RING_COLOURS = {"tamper": "#B91C1C", "clear": "#FF6E00", "in_use": "#0F766E", "free": "#D9D7D0"}
-PART_LABELS = {"tamper": "Tamper", "clear": "To clear", "in_use": "In use", "free": "Free"}
+# Dict order = drawing order everywhere: ring counter-clockwise from 12 o'clock, bars left to right, legends.
+RING_COLOURS = {"in_use": "#0F766E", "clear": "#FF6E00", "tamper": "#B91C1C", "free": "#D9D7D0"}
+PART_LABELS = {"in_use": "In use", "clear": "To clear", "tamper": "Tamper", "free": "Free"}
 
 
 def ring_css(counts):
     """Donut ring as flat conic-gradient segments, read counter-clockwise from 12 o'clock:
-    tamper, clear, in use, free. CSS draws clockwise, so lay them out from the end (free first)."""
+    in use, clear, tamper, free. CSS draws clockwise, so lay them out from the end (free first)."""
     total = sum(counts[k] for k in RING_COLOURS)
     if not total:
         return RING_COLOURS["free"]
     stops, at = [], 0.0
-    for key in ("free", "in_use", "clear", "tamper"):
+    for key in reversed(RING_COLOURS):
         end = at + 100 * counts[key] / total
         if end > at:
             stops.append(f"{RING_COLOURS[key]} {at:.2f}% {end:.2f}%")
@@ -67,9 +68,11 @@ def console_data():
 
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
     tamper = b.list_tamper_events()
-    for e in tamper[:20]:  # only the shown rows need where/owner (one GetItem each on AWS)
+    shown = tamper[:100]  # log: last 7 days, older ones behind "Show older alerts"; capped (one GetItem per row on AWS)
+    for e in shown:
         session = b.get_session(e["session_id"]) if e.get("session_id") else None
-        e.update(where=where(e["lot_id"]), owner=name_of(session["user_id"]) if session else None)
+        e.update(where=where(e["lot_id"]), owner=name_of(session["user_id"]) if session else None,
+                 recent=e["detected_time"] >= week_ago)
 
     # One category per lot, same colours everywhere: tamper (red) > clear (orange) > in_use (green) > free (grey).
     # tamper = a tamper event belongs to the bike parked there now (same session), so it clears when the bike leaves.
@@ -114,7 +117,7 @@ def console_data():
         "parked": parked,
         "abandoned": [s for s in parked if s["abandoned"]],  # suspected abandoned, longest first (Force unlock list)
         "unregistered": unregistered,
-        "tamper": tamper[:20],
+        "tamper": shown,
         "stations": stations,
         "usage": sorted(stations, key=lambda s: -s["pct"]),
     }
