@@ -61,7 +61,7 @@ Building with **Claude Code** in the repo.
 - **IR obstacle sensor:** bike present (1 GPIO).
 - **SW-420 vibration sensor:** tamper (1 GPIO).
 - **3 V solenoid lock + relay:** relay switched by 1 GPIO.
-- **No LEDs** (probably). **No microswitch** (decided).
+- **No LEDs** (probably). ~~No microswitch~~ → **lock with a feedback wire** (changed 17 Nov): the solenoid lock reports whether the latch is closed (1 GPIO), so the cloud can tie a cyclist to the lot if they leave it open.
 
 ### Lock wiring
 - 3 V solenoid powered by **2× AA batteries** (not the ESP32).
@@ -71,7 +71,7 @@ Building with **Claude Code** in the repo.
 ### ESP32 (one per parking space)
 - Connects **directly to AWS IoT Core**: MQTT over TLS, X.509 cert, Wi-Fi (phone hotspot for the demo). Deployment: 4G router or cellular module.
 - **No access decisions.** Obeys "open lot N".
-- **Edge filtering:** IR ~10 Hz debounced → `bike_arrived` / `bike_left`; SW-420 → `tamper` after e.g. 5 pulses in 3 s, then 60 s cooldown. Raw IR would be ~864,000 messages/day per lot vs ~4 per session.
+- **Edge filtering:** IR ~10 Hz debounced → `bike_arrived` / `bike_left`; SW-420 → `tamper` after e.g. 5 pulses in 3 s, then 60 s cooldown (17 Nov: the cloud also enforces a 60 s per-lot cooldown via `lot.last_tamper_at`, so one shaking episode = one record + one Telegram). Raw IR would be ~864,000 messages/day per lot vs ~4 per session.
 - Subscribes to `space1/+/cmd`. On `open`: skip if expired (~30 s, needs NTP), pulse relay 1–2 s, publish `opened` **with the command's `requestId`**.
 - **Last Will** on `space1/status` (KIV). **No offline buffer.**
 
@@ -145,7 +145,7 @@ Scan any QR → sign up → Connect Telegram.
 | Forgot password | "Forgot password?" → Cognito emails a code → set a new one (cyclists and officers) |
 | Lost phone / no access to email | Officer verifies in person → Force unlock, and resets the password (`admin_set_user_password`) |
 | Telegram not connected | No alerts; still visible on officer dashboard |
-| Cable not clicked back in | Harmless; undetectable (no microswitch) |
+| Cable not clicked back in (changed 17 Nov) | Lock feedback reports it: lot → `awaiting_lock`, Telegram reminder, account can't claim another lot until `lock_closed`; officer view flags it after `RELEASE_TIMEOUT_MINUTES` |
 | Batteries flat | Fail-secure lock stays shut; staff release |
 | Bike leaves without an unlock | Open item: log as possible theft |
 | Lambda repeatedly fails | Optional SQS dead-letter queue |
@@ -164,7 +164,7 @@ Scan any QR → sign up → Connect Telegram.
 | Telegram linking | One-time code + `getUpdates` | Webhook Lambda | No inbound endpoint |
 | Officer view | Officer-only dashboard | Telegram group | Many lots; tamper log, overstays, Force unlock |
 | Lock | 3 V solenoid + relay + AA | SG90 servo; 12 V solenoid | Real lock action; 12 V fail-secure for deployment |
-| Microswitch | Not used | Latch switch | Simpler; IR confirms bike |
+| Lock state (changed 17 Nov) | Solenoid lock with built-in feedback wire | Separate microswitch / reed switch; honour system (cyclist taps "closed") | Enforces closing the lock before leaving; one part, 1 GPIO per lot; also confirms a claim was locked. Trade-off: ~5–6 lots per ESP32 (4 GPIO each) |
 | Filtering | Edge (state changes only) | Raw readings | Saves data, messages, Lambda calls, DB writes |
 | API layer | None | API Gateway | Web app uses boto3 server-side |
 | Unlock confirmation (changed 7 Nov) | IR `bike_left` confirms the unlock (lot stays `releasing` until then, owner can resend); claim has Retry / Cancel | ESP32 echoes `requestId` in an `opened` event; web app subscribes to MQTT | Uses the sensor we already have; no extra field or message; boto3 can only publish |
@@ -185,7 +185,7 @@ Scan any QR → sign up → Connect Telegram.
 ## 10. Hardware and cost
 
 Have: MakePython ESP32, Raspberry Pi + touch screen (unused), phone hotspot, laptop, breadboard, jumper wires.
-Per real lot: IR sensor, SW-420, 3 V solenoid, 3.3 V-triggerable relay, flyback diode, 2× AA holder, printed QR. **Prices TBC.**
+Per real lot: IR sensor, SW-420, solenoid lock **with feedback wire** (latch status), 3.3 V-triggerable relay, flyback diode, 2× AA holder, printed QR. **Prices TBC.**
 Still needed: cost per lot / space / bike space vs S$9,400; monthly AWS estimate.
 
 ## 11. Diagram fix list (only when asked)
@@ -203,7 +203,7 @@ Reviewed against the slide "Architecture and data flow" on 7 Nov.
 - DynamoDB box → "locks, sessions (usage history), users, spaces, tamper-events".
 - **Two EC2 boxes (Public / Government Website):** recommended merge into one "Web app (FastAPI): cyclist / public / officer pages. Laptop for demo, EC2 in deployment", with arrows to Cyclist and Officer and one Lock/Unlock arrow to IoT Core. Terraform creates no EC2. If kept as two, add Government Website → IoT Core "Force unlock".
 - "Lot units 2–10" → "Lot units 2–N". Each lot needs 3 GPIO (IR, SW-420, relay); one ESP32 realistically handles ~6–8 lots.
-- Lot unit → "QR sticker, IR, SW-420, 3 V solenoid + relay (2× AA)".
+- Lot unit → "QR sticker, IR, SW-420, solenoid lock + relay (2× AA), lock feedback".
 
 **Optional:**
 - Website → Telegram "getUpdates (connect once)"; Cyclist → Telegram "connect once".

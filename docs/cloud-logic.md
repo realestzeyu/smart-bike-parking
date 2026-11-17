@@ -7,7 +7,8 @@ Decisions baked in:
 - Every lot write is **conditional on the status just read**; on conflict, re-read and decide again (max 3 tries).
 - Telegram failures never block a database write. DynamoDB errors raise → Lambda retries (up to 2).
 - One JSON log line per event (measured results).
-- Officer flags *stuck releasing* and *unregistered bike* are computed by the web app when the page loads (no Lambda involved).
+- Officer flags *stuck releasing*, *unregistered bike* and *left unlocked* are computed by the web app when the page loads (no Lambda involved).
+- **Lock state (added 17 Nov):** the solenoid lock's feedback wire reports `lock_closed` / `lock_opened`. Taking the bike with the lock still open → lot `awaiting_lock`, the account is tied to the lot (`pending_lock_lot_id`, no new claims) until `lock_closed`. A lot that never reported lock state counts as closed.
 
 ---
 
@@ -19,7 +20,9 @@ stateDiagram-v2
     free --> taken: web app - Use this lot (needs bike_present; claim + session, is_open=Y)
     taken --> free: web app - Cancel (delete session)
     taken --> releasing: web app - Unlock / officer Force unlock (end_time, remove is_open)
-    releasing --> free: handle_event - bike_left (unlock confirmed)
+    releasing --> free: handle_event - bike_left with lock closed
+    releasing --> awaiting_lock: handle_event - bike_left with lock OPEN (account tied, reminder)
+    awaiting_lock --> free: handle_event - lock_closed (account released)
     releasing --> releasing: owner taps Unlock again (re-send open)
 ```
 
@@ -37,30 +40,49 @@ flowchart TD
     E -- bike_arrived --> F["bike_present = true<br/>bike_present_since = now (if not set)"]
 
     E -- bike_left --> G{"lot status?"}
-    G -- releasing --> G1["status = free, bike_present = false<br/>remove bike_present_since, user_id, session_id"]
+    G -- "releasing + lock closed" --> G1["status = free, bike_present = false<br/>remove bike_present_since, user_id, session_id"]
+    G -- "releasing + lock OPEN" --> G4["status = awaiting_lock, awaiting_lock_since = now<br/>keep user_id; user.pending_lock_lot_id = lot"]
+    G4 --> T3["Telegram owner:<br/>lock still open, close it;<br/>no new lots until then"]
     G -- taken --> G2["bike_present = false, remove bike_present_since<br/>put tamper event: lot_id + session_id"]
     G2 --> T1["Telegram owner:<br/>bike left without unlock (suspected theft)"]
-    G -- free --> G3["bike_present = false<br/>remove bike_present_since"]
+    G -- "free / awaiting_lock" --> G3["bike_present = false<br/>remove bike_present_since"]
 
-    E -- tamper --> H{"lot status?"}
+    E -- tamper --> TC{"New episode?<br/>set last_tamper_at = now IF missing<br/>or older than TAMPER_COOLDOWN_SECONDS"}
+    TC -- "no: repeat within cooldown" --> TD["Drop: no row, no Telegram<br/>(log tamper_repeat_dropped)"]
+    TC -- yes --> H{"lot status?"}
     H -- taken --> H1["put tamper event: lot_id + session_id"]
     H1 --> T2["Telegram owner:<br/>someone is tampering with your bike"]
     H -- releasing --> H2["put tamper event: lot_id + session_id<br/>notified = false, no alert (owner unlocking)"]
-    H -- free --> H3["put tamper event: lot_id only<br/>notified = false, no alert (no owner)"]
+    H -- "free / awaiting_lock" --> H3["put tamper event: lot_id only<br/>notified = false, no alert (no bike of theirs)"]
 
-    G1 --> W{"Write condition<br/>status unchanged?"}
+    E -- lock_opened --> K1["lock_closed = false"]
+    E -- lock_closed --> K{"lot status?"}
+    K -- awaiting_lock --> K2["status = free, lock_closed = true<br/>remove user_id, session_id, awaiting_lock_since<br/>remove user.pending_lock_lot_id"]
+    K2 --> T4["Telegram owner: lock closed, thanks"]
+    K -- other --> K3["lock_closed = true<br/>(after a claim: bike confirmed locked)"]
+
+    G1 --> W{"Write condition<br/>status / lock state unchanged?"}
+    G4 --> W
     G2 --> W
     G3 --> W
-    W -- "no: web app changed the lot" --> C
+    K2 --> W
+    W -- "no: lot changed meanwhile" --> C
     W -- yes --> L["Log one JSON line"]
     F --> L
     T1 --> L
     T2 --> L
+    T3 --> L
+    T4 --> L
     H2 --> L
     H3 --> L
+    K1 --> L
+    K3 --> L
+    TD --> L
 ```
 
-Conditional writes: lot updates carry `ConditionExpression: status = :read_status AND attribute_exists(id)`. A failed condition means the web app changed the lot between our read and write (e.g. the owner just tapped Unlock), so we re-read and take the right branch. This prevents a false theft alert. Max 3 tries, then log and stop.
+**Tamper de-duplication:** the ESP32 already sends at most one `tamper` per 60 s per lot (threshold + cooldown). The cloud repeats the rule as a safety net: the cooldown check is one atomic conditional write on the lot, so even 10 parallel Lambda runs for the same burst produce exactly **one** tamper row and **one** Telegram. Suspected theft (`bike_left` while `taken`) is not subject to the cooldown.
+
+Conditional writes: lot updates carry `ConditionExpression: status = :read_status AND attribute_exists(id)`; the two `releasing` branches of `bike_left` also check the lock state they read. A failed condition means the lot changed between our read and write (the owner just tapped Unlock, or the lock just closed), so we re-read and take the right branch. This prevents a false theft alert and a wrongly tied account. Max 3 tries, then log and stop.
 
 ## 3. `check_overstay` (EventBridge Scheduler: every 1 min demo, 15 min deployment)
 
@@ -103,6 +125,34 @@ flowchart TD
     C --> D["Suspected abandoned:<br/>session has overstay_notified_at"]
     C --> E["Stuck releasing:<br/>status = releasing and session end_time<br/>older than RELEASE_TIMEOUT_MINUTES"]
     C --> F["Unregistered bike:<br/>status = free, bike_present = true,<br/>bike_present_since older than UNREGISTERED_LIMIT_MINUTES"]
+    C --> G["Left unlocked:<br/>status = awaiting_lock and awaiting_lock_since<br/>older than RELEASE_TIMEOUT_MINUTES"]
+```
+
+## 5b. Example: cyclist rides off with the lock open
+
+```mermaid
+sequenceDiagram
+    participant C as Cyclist
+    participant W as Web app
+    participant ESP as ESP32
+    participant HE as handle_event
+    participant DB as DynamoDB
+
+    C->>W: Unlock
+    W->>DB: lot -> releasing, close session
+    W->>ESP: open (via IoT Core)
+    ESP->>HE: lock_opened
+    HE->>DB: lock_closed = false
+    C->>C: takes bike, forgets the cable
+    ESP->>HE: bike_left
+    HE->>DB: lot -> awaiting_lock (keeps user_id), user.pending_lock_lot_id = lot
+    HE-->>C: Telegram: lock still open, please close it
+    C->>W: tries "Use this lot" elsewhere
+    W-->>C: Blocked: close the lock at lot 1 first
+    C->>C: comes back, clicks the cable in
+    ESP->>HE: lock_closed
+    HE->>DB: lot -> free, remove pending_lock_lot_id
+    HE-->>C: Telegram: lock closed, thanks
 ```
 
 ## 6. Example: tamper on a parked bike
@@ -169,7 +219,7 @@ CloudWatch Logs Insights queries over these give event counts, alert success rat
 | `lambdas/handle_event/handler.py` | diagram 2 + the race retry (diagram 7) |
 | `lambdas/check_overstay/handler.py` | diagram 3 |
 | `lambdas/shared/sbp_common.py` | time, JSON logging, DynamoDB tables, Telegram helper (diagram 4); zipped into both Lambdas by `infra/lambdas.tf` |
-| `lambdas/tests/` | 22 unit tests (pytest + moto) |
+| `lambdas/tests/` | 34 unit tests (pytest + moto) |
 | `infra/test_data.sh` | test data + web-app stand-ins (`load`, `claim`, `unlock`, `show`, `reset`) |
 
 Run the unit tests (from `lambdas/`): `python -m venv .venv`, install `requirements-dev.txt`, then `python -m pytest tests -q`. See `infra/README.md` for the end-to-end test on AWS.

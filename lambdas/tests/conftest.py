@@ -66,6 +66,7 @@ def db(monkeypatch):
     monkeypatch.setenv("TABLE_PREFIX", "sbp-")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
     monkeypatch.setenv("OVERSTAY_LIMIT_MINUTES", "2")
+    monkeypatch.setenv("TAMPER_COOLDOWN_SECONDS", "60")
     with mock_aws():
         sbp_common.reset_clients()
         dynamodb: Any = boto3.resource("dynamodb")  # Any: .Table is built at runtime

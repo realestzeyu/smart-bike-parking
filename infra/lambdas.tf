@@ -4,9 +4,14 @@ locals {
   lambdas = {
     handle_event = {
       timeout = 10
-      env     = {}
-      # Updates the lot (status, bike_present), logs tamper/theft, reads the owner's telegram_chat_id.
+      env     = { TAMPER_COOLDOWN_SECONDS = tostring(var.tamper_cooldown_seconds) }
+      # Updates the lot (status, bike_present, lock_closed), logs tamper/theft, reads the owner's
+      # telegram_chat_id, and ties/releases the owner's account (users.pending_lock_lot_id).
       statements = [
+        {
+          actions   = ["dynamodb:UpdateItem"]
+          resources = [aws_dynamodb_table.users.arn]
+        },
         {
           actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
           resources = [aws_dynamodb_table.lots.arn]

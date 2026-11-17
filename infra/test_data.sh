@@ -7,7 +7,7 @@
 #   ./test_data.sh claim     act like the web app's "Use this lot": lot -> taken + open session
 #   ./test_data.sh unlock    act like the web app's "Unlock": lot -> releasing + close session
 #   ./test_data.sh show      print the lot, sessions and tamper events
-#   ./test_data.sh reset     lot back to free/empty; delete test sessions and tamper events
+#   ./test_data.sh reset     lot back to free/empty/lock closed; untie the test user; delete test sessions + tamper events
 #
 # Env: PROFILE (default sbp-admin), TELEGRAM_CHAT_ID (optional: your chat ID, to receive test alerts)
 set -euo pipefail
@@ -31,7 +31,7 @@ put_new() {  # put an item only if its key doesn't exist yet
 case "${1:-}" in
   load)
     put_new sbp-spaces '{"id":{"S":"space1"},"address":{"S":"Test Station, Exit A"},"lat":{"N":"1.3240"},"lng":{"N":"103.9300"}}' id
-    put_new sbp-lots '{"space_id":{"S":"space1"},"id":{"S":"space1#lot1"},"status":{"S":"free"},"bike_present":{"BOOL":false}}' id
+    put_new sbp-lots '{"space_id":{"S":"space1"},"id":{"S":"space1#lot1"},"status":{"S":"free"},"bike_present":{"BOOL":false},"lock_closed":{"BOOL":true}}' id
     user='{"id":{"S":"'$USER_ID'"},"name":{"S":"Test Cyclist"},"email":{"S":"test@example.com"},"role":{"S":"cyclist"}'
     [[ -n "${TELEGRAM_CHAT_ID:-}" ]] && user+=',"telegram_chat_id":{"N":"'$TELEGRAM_CHAT_ID'"}'
     put_new sbp-users "$user}" id
@@ -68,13 +68,16 @@ case "${1:-}" in
     aws dynamodb query "${P[@]}" --table-name sbp-sessions --index-name by-lot \
       --key-condition-expression "lot_id = :l" --expression-attribute-values '{":l":{"S":"space1#lot1"}}' --output json
     echo "--- tamper events"; aws dynamodb scan "${P[@]}" --table-name sbp-tamper-events --output json
+    echo "--- user $USER_ID"; aws dynamodb get-item "${P[@]}" --table-name sbp-users --key '{"id":{"S":"'$USER_ID'"}}' --output json
     ;;
 
   reset)
     aws dynamodb update-item "${P[@]}" --table-name sbp-lots --key "$LOT_KEY" \
-      --update-expression "SET #s = :free, bike_present = :f REMOVE bike_present_since, user_id, session_id" \
+      --update-expression "SET #s = :free, bike_present = :f, lock_closed = :t REMOVE bike_present_since, user_id, session_id, awaiting_lock_since" \
       --expression-attribute-names '{"#s":"status"}' \
-      --expression-attribute-values '{":free":{"S":"free"},":f":{"BOOL":false}}'
+      --expression-attribute-values '{":free":{"S":"free"},":f":{"BOOL":false},":t":{"BOOL":true}}'
+    aws dynamodb update-item "${P[@]}" --table-name sbp-users --key '{"id":{"S":"'$USER_ID'"}}' \
+      --update-expression "REMOVE pending_lock_lot_id"
     for sid in $(aws dynamodb query "${P[@]}" --table-name sbp-sessions --index-name by-lot \
         --key-condition-expression "lot_id = :l" --expression-attribute-values '{":l":{"S":"space1#lot1"}}' \
         --query 'Items[?user_id.S==`'$USER_ID'`].id.S' --output text); do

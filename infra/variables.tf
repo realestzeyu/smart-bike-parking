@@ -29,6 +29,12 @@ variable "overstay_limit_minutes" {
   default     = 2
 }
 
+variable "tamper_cooldown_seconds" {
+  description = "Per-lot tamper cooldown: repeats within this window are dropped (no row, no Telegram)."
+  type        = number
+  default     = 60
+}
+
 variable "overstay_check_schedule" {
   description = "How often check_overstay runs when enabled. Demo: rate(1 minute). Deployment: rate(15 minutes)."
   type        = string

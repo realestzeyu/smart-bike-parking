@@ -164,6 +164,129 @@ def test_unlock_race_gives_no_false_theft_alert(db, telegram, handle_event, monk
     assert tamper_events(db) == [] and telegram.sent == []
 
 
+# ---------- lock state (solenoid lock feedback wire) ----------
+
+RELEASING = {**TAKEN, "status": "releasing"}
+
+
+def get_user(db, user_id="alice"):
+    return db.Table("sbp-users").get_item(Key={"id": user_id})["Item"]
+
+
+def test_bike_left_with_lock_closed_frees_the_lot(db, telegram, handle_event):
+    put_lot(db, **RELEASING, lock_closed=True)
+    assert handle_event.lambda_handler(event("bike_left"), None)["action"] == "freed"
+    assert get_lot(db)["status"] == "free"
+    assert "pending_lock_lot_id" not in get_user(db)
+
+
+def test_bike_left_with_lock_open_ties_account_to_lot(db, telegram, handle_event):
+    put_lot(db, **RELEASING, lock_closed=False)
+    assert handle_event.lambda_handler(event("bike_left"), None) == {"action": "awaiting_lock", "notified": True}
+    lot = get_lot(db)
+    assert lot["status"] == "awaiting_lock" and lot["user_id"] == "alice"
+    assert lot["bike_present"] is False and lot["awaiting_lock_since"].endswith("Z")
+    assert get_user(db)["pending_lock_lot_id"] == "space1#lot1"
+    [(_, text)] = telegram.sent
+    assert "lock is still open" in text
+
+
+def test_lock_closed_while_awaiting_frees_lot_and_releases_account(db, telegram, handle_event):
+    put_lot(db, **{**RELEASING, "status": "awaiting_lock", "bike_present": False,
+                   "awaiting_lock_since": "2026-11-17T01:00:00Z"}, lock_closed=False)
+    db.Table("sbp-users").update_item(Key={"id": "alice"}, UpdateExpression="SET pending_lock_lot_id = :l",
+                                      ExpressionAttributeValues={":l": "space1#lot1"})
+    assert handle_event.lambda_handler(event("lock_closed"), None)["action"] == "lock_closed_freed"
+    lot = get_lot(db)
+    assert lot["status"] == "free" and lot["lock_closed"] is True
+    for gone in ("user_id", "session_id", "awaiting_lock_since"):
+        assert gone not in lot
+    assert "pending_lock_lot_id" not in get_user(db)
+    assert "closed" in telegram.sent[0][1]
+
+
+def test_lock_closed_before_bike_left_then_bike_left_frees(db, telegram, handle_event):
+    """Cyclist clicks the cable back in, then rides off: no tie needed."""
+    put_lot(db, **RELEASING, lock_closed=False)
+    assert handle_event.lambda_handler(event("lock_closed"), None)["action"] == "lock_closed"
+    assert get_lot(db)["status"] == "releasing"
+    assert handle_event.lambda_handler(event("bike_left"), None)["action"] == "freed"
+    assert "pending_lock_lot_id" not in get_user(db)
+
+
+def test_lock_opened_and_closed_are_recorded(db, telegram, handle_event):
+    put_lot(db, **TAKEN)
+    handle_event.lambda_handler(event("lock_opened"), None)
+    assert get_lot(db)["lock_closed"] is False and get_lot(db)["status"] == "taken"
+    handle_event.lambda_handler(event("lock_closed"), None)
+    assert get_lot(db)["lock_closed"] is True and get_lot(db)["status"] == "taken"
+    assert telegram.sent == []
+
+
+def test_lot_without_lock_feedback_behaves_as_before(db, telegram, handle_event):
+    """No lock_closed field = treated as closed, so nobody gets tied to a lot."""
+    put_lot(db, **RELEASING)
+    assert handle_event.lambda_handler(event("bike_left"), None)["action"] == "freed"
+
+
+def test_tamper_while_awaiting_lock_is_logged_without_alert(db, telegram, handle_event):
+    put_lot(db, **{**RELEASING, "status": "awaiting_lock", "bike_present": False}, lock_closed=False)
+    assert handle_event.lambda_handler(event("tamper"), None)["action"] == "tamper_logged"
+    [record] = tamper_events(db)
+    assert "session_id" not in record and telegram.sent == []
+
+
+def test_lock_closing_during_bike_left_race_frees_instead_of_tying(db, telegram, handle_event, monkeypatch):
+    """We read 'lock open', the lock closes, then bike_left is processed: must free, not tie."""
+    put_lot(db, **RELEASING, lock_closed=False)
+    real_read = handle_event.read_lot
+    calls = {"n": 0}
+
+    def read_then_lock_closes(space_id, lot_id):
+        item = real_read(space_id, lot_id)
+        calls["n"] += 1
+        if calls["n"] == 1:
+            db.Table("sbp-lots").update_item(Key=LOT_KEY, UpdateExpression="SET lock_closed = :t",
+                                             ExpressionAttributeValues={":t": True})
+        return item
+
+    monkeypatch.setattr(handle_event, "read_lot", read_then_lock_closes)
+    assert handle_event.lambda_handler(event("bike_left"), None)["action"] == "freed"
+    assert calls["n"] == 2
+    assert "pending_lock_lot_id" not in get_user(db) and telegram.sent == []
+
+
+# ---------- tamper cooldown (one episode per lot per TAMPER_COOLDOWN_SECONDS) ----------
+
+def test_ten_tamper_signals_make_one_record_and_one_alert(db, telegram, handle_event):
+    put_lot(db, **TAKEN)
+    results = [handle_event.lambda_handler(event("tamper"), None)["action"] for _ in range(10)]
+    assert results[0] == "tamper_alert"
+    assert results[1:] == ["tamper_repeat_dropped"] * 9
+    assert len(tamper_events(db)) == 1
+    assert len(telegram.sent) == 1
+
+
+def test_tamper_after_cooldown_is_a_new_episode(db, telegram, handle_event):
+    put_lot(db, **TAKEN, last_tamper_at="2026-01-01T00:00:00Z")  # long ago
+    assert handle_event.lambda_handler(event("tamper"), None)["action"] == "tamper_alert"
+    assert len(tamper_events(db)) == 1 and len(telegram.sent) == 1
+
+
+def test_cooldown_also_applies_to_free_lots(db, telegram, handle_event):
+    put_lot(db)
+    handle_event.lambda_handler(event("tamper"), None)
+    assert handle_event.lambda_handler(event("tamper"), None)["action"] == "tamper_repeat_dropped"
+    assert len(tamper_events(db)) == 1
+
+
+def test_suspected_theft_is_not_affected_by_tamper_cooldown(db, telegram, handle_event):
+    put_lot(db, **TAKEN)
+    handle_event.lambda_handler(event("tamper"), None)              # starts a cooldown
+    assert handle_event.lambda_handler(event("bike_left"), None)["action"] == "suspected_theft"
+    assert len(tamper_events(db)) == 2 and len(telegram.sent) == 2
+
+
 def test_latency_is_logged_when_device_sends_ts(db, telegram, handle_event, capsys):
     put_lot(db)
     handle_event.lambda_handler(event("bike_arrived", ts=1), None)
