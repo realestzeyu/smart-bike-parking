@@ -4,6 +4,8 @@ One FastAPI app (Jinja2 templates, Tailwind, HTMX, Leaflet) with two parts: **cy
 
 > **7 Nov 2026: schema proposal updated** (still DynamoDB). Tables are now `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions`, `sbp-tamper-events` with `snake_case` fields; there is **no `opened` confirmation** any more (the lot frees on IR `bike_left`; current lot flow: `design/JOURNEYMAP.md`). Notes further down may still use the old names; `../docs/agreed-names-and-formats.md` is the source of truth.
 
+> **17 Nov 2026: lock-state enforcement.** New lot status **`awaiting_lock`** (bike taken, lock left open) and `lot.lock_closed`. **Block "Use this lot" when the user has `pending_lock_lot_id`** ("Close the lock at <address>, lot N first"). Unlock page: `awaiting_lock` → "please click the cable back in". Officer view: new **Left unlocked** flag. Details in the agreed-names doc, section 3.
+>
 > **10 Nov 2026:** NiceGUI → FastAPI. `space` gets `lat`/`lng`; `tamper_event` gets `lot_id`. ~~`user.password` plaintext~~ **→ login via Amazon Cognito (later on 10 Nov)**: `user.password` is removed; see "Login (Cognito)" in `../docs/agreed-names-and-formats.md`. Starting data comes from `load_starting_data.py`. Target UI: 3 images in `design/`.
 
 Table names, fields, status rules, payloads and settings: **`../docs/agreed-names-and-formats.md`**. Follow it exactly; don't add fields without updating it.

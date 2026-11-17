@@ -4,9 +4,14 @@ locals {
   lambdas = {
     handle_event = {
       timeout = 10
-      env     = {}
-      # Updates the lot (status, bike_present), logs tamper/theft, reads the owner's telegram_chat_id.
+      env     = { TAMPER_COOLDOWN_SECONDS = tostring(var.tamper_cooldown_seconds) }
+      # Updates the lot (status, bike_present, lock_closed), logs tamper/theft, reads the owner's
+      # telegram_chat_id, and ties/releases the owner's account (users.pending_lock_lot_id).
       statements = [
+        {
+          actions   = ["dynamodb:UpdateItem"]
+          resources = [aws_dynamodb_table.users.arn]
+        },
         {
           actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
           resources = [aws_dynamodb_table.lots.arn]
@@ -23,16 +28,24 @@ locals {
     }
     check_overstay = {
       timeout = 30
-      env     = { OVERSTAY_LIMIT_MINUTES = tostring(var.overstay_limit_minutes) }
-      # Queries the open-sessions index, sets overstay_notified_at, reads the owner's telegram_chat_id.
+      env = {
+        OVERSTAY_LIMIT_MINUTES = tostring(var.overstay_limit_minutes)
+        LOCK_REMINDER_MINUTES  = tostring(var.lock_reminder_minutes)
+      }
+      # Overstay: queries open-sessions, sets overstay_notified_at, checks the lot still has the bike.
+      # Lock reminders: scans lots with the lock open, reads the claim time, sets lock_reminded_at.
       statements = [
         {
           actions   = ["dynamodb:Query"]
           resources = ["${aws_dynamodb_table.sessions.arn}/index/open-sessions"]
         },
         {
-          actions   = ["dynamodb:UpdateItem"]
+          actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
           resources = [aws_dynamodb_table.sessions.arn]
+        },
+        {
+          actions   = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:UpdateItem"]
+          resources = [aws_dynamodb_table.lots.arn]
         },
         {
           actions   = ["dynamodb:GetItem"]

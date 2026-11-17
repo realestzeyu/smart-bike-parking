@@ -7,7 +7,7 @@ School IoT + cloud project (PoC). Smart locks fitted to existing bicycle racks a
 - Lot ID in the database (`lot.id`): `space1#lot3`. In URLs/QR: `space1_lot3`. In MQTT topics: `space1/lot3/...`.
 
 ## Stack
-- **ESP32** (one per parking space) → **AWS IoT Core** (MQTT over TLS, X.509 cert). Sensors per lot: IR (bike present), SW-420 (tamper), 3 V solenoid via relay (lock).
+- **ESP32** (one per parking space) → **AWS IoT Core** (MQTT over TLS, X.509 cert). Sensors per lot: IR (bike present), SW-420 (tamper), solenoid lock via relay with a **feedback wire** (lock closed / open).
 - **IoT Rule** → Lambda `handle_event`. **EventBridge Scheduler** → Lambda `check_overstay`. Lambdas are Python.
 - **DynamoDB** (on-demand, key-value): `sbp-spaces`, `sbp-lots`, `sbp-users`, `sbp-sessions`, `sbp-tamper-events` (team ER diagram + needed fields; updated 10 Nov). Starting data (space1 + 3 simulated stations, lots, officer) is loaded by `webapp/load_starting_data.py` (create-only), not Terraform.
 - **Web app**: FastAPI + HTML pages (Jinja2, Tailwind, HTMX, Leaflet), uvicorn on port 8000. Cyclist and officer pages in one app. Talks to AWS directly with `boto3`. Login via **Amazon Cognito** (own login/sign-up pages, boto3 server-side; Cognito holds passwords, `sbp-users` holds profile + role).
@@ -29,7 +29,7 @@ See `docs/agreed-names-and-formats.md`. **Both halves depend on it.** Don't inve
 ## Hard rules
 - **Never commit secrets**: certificates/private keys, `.env`, Terraform state, `*.tfvars`, Telegram bot token, web app `SESSION_SECRET`, AWS keys.
 - **No API Gateway.** The web app calls AWS server-side with boto3; Lambdas are triggered by IoT Rules and EventBridge only.
-- **The cloud decides access; the ESP32 just obeys `open`.** No access logic on the device; it never locks on its own (IR only reports). `bike_left` confirms an unlock.
+- **The cloud decides access; the ESP32 just obeys `open`.** No access logic on the device; it never locks on its own (IR and lock feedback only report). `bike_left` confirms an unlock; leaving with the lock open ties the account to the lot until `lock_closed`.
 - **ESP32 sends state changes only** (edge filtering), never raw sensor readings.
 - Times stored in UTC ISO 8601 (`2026-11-06T07:15:00Z`); shown to users in Singapore time.
 - Keep it simple. It's a PoC; prefer the fewest moving parts.
