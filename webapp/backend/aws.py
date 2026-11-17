@@ -212,3 +212,11 @@ class AwsBackend(Backend):
 
     def list_tamper_events(self):
         return sorted(self._scan(self.t_tamper), key=lambda e: e["detected_time"], reverse=True)
+
+    def list_user_sessions(self, user_id, limit=20):
+        # by-user index (user_id + start_time), newest first. GSI reads are eventually consistent.
+        resp = self._table(self.t_sessions).query(
+            IndexName="by-user", KeyConditionExpression=Key("user_id").eq(user_id),
+            ScanIndexForward=False, Limit=limit,
+        )
+        return [_plain(i) for i in resp.get("Items", [])]

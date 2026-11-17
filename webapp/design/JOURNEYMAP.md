@@ -1,7 +1,7 @@
 # User journeys
 
 ## J1. Find a free lot (anyone, no login)
-1. Opens http://<laptop-ip>:8000/ on the phone → full-screen map of stations. Pins for 4 stations (Upper Changi Exit C with the real lot, plus 3 simulated stations of 20 lots: available / few left / full). Blue dot = fixed fake "you are here" nearby. No search bar. Tab bar: Map active; Profile works (log in / log out / switch account, Connect Telegram, officer console link); My parking greyed out.
+1. Opens http://<laptop-ip>:8000/ on the phone → full-screen map of stations. Pins for 4 stations (Upper Changi Exit C with the real lot, plus 3 simulated stations of 20 lots: available / few left / full). Blue dot = fixed fake "you are here" nearby. No search bar. Tab bar: Map active; Profile works (log in / log out / switch account, Connect Telegram, officer console link); My parking (J4a).
 2. Taps the pin → station sheet slides up: "Upper Changi MRT Exit C", "180 m away, 2 min walk", "1 of 1 lots free", live indicator, lot grid (free / occupied). Tapping a free lot opens its lot page (same as scanning its QR code).
 3. Back arrow → map.
 
@@ -23,6 +23,12 @@ Scans QR → already logged in (cookie) → Use this lot → same as J2.7.
 2. Taps Unlock → lot releasing, session ended, open sent → "Unlocked. Please take your bike and push the cable back in." with "Open signal sent … at …", a Done button (→ map) and "Lock didn't open? Unlock again".
 3. Takes the bike → IR bike_left → handle_event sets the lot free. (No page update needed.)
 
+## J4a. My parking (tab bar, logged in)
+1. Taps My parking (not logged in → Log in, then back here).
+2. Bike parked: a card with the parking space, lot, "Parked since …", how long, and a lock badge (Locked / Lock open / Unlocked). Tapping it opens the lot page (Unlock).
+3. Took the bike but left the lock open (awaiting_lock): amber card "The lock is still open, push the metal piece back in". Can't use another lot until it's closed.
+4. Nothing parked: "No bike parked right now" + Find a lot. Below: recent parkings (place, date, duration). Refreshes every 5 s.
+
 ## J5. Someone else scans a taken lot
 Sees "This lot is in use." No buttons. Logged-out users see the same.
 
@@ -42,4 +48,4 @@ Sent by the Lambdas. The web app only stores telegram_chat_id.
 ## Not in this build
 - Unlock confirmation (KIV): the app assumes every open command worked.
 - Theft alert when a bike leaves without Unlock: to discuss with teammate (would be in handle_event).
-- My parking tab, search, usage charts, export report: only if time allows.
+- Search, usage charts, export report: only if time allows.

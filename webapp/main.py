@@ -15,7 +15,7 @@ import config
 from auth import LoginRequired, OfficerRequired
 from backend import get_backend
 from templating import templates
-from pages import auth_pages, lot, officer, public
+from pages import auth_pages, lot, officer, parking, public
 
 app = FastAPI(title="Smart Bicycle Parking")
 # Cookie lasts 30 days so repeat QR scans stay logged in.
@@ -36,6 +36,7 @@ async def officer_required(request: Request, exc: OfficerRequired):
 
 app.include_router(public.router)
 app.include_router(lot.router)
+app.include_router(parking.router)
 app.include_router(auth_pages.router)
 app.include_router(officer.router)
 

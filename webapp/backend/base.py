@@ -54,3 +54,6 @@ class Backend:
     def list_open_sessions(self): ...  # sessions with is_open = "Y"
     def list_sessions_since(self, since_iso): ...  # still open, or ended at/after since_iso (officer 24 h charts)
     def list_tamper_events(self): ...  # newest first
+
+    # Cyclist's own parkings (My parking)
+    def list_user_sessions(self, user_id, limit=20): ...  # newest first (aws: by-user index)

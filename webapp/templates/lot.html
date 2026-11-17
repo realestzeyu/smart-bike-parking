@@ -13,7 +13,7 @@
 {% if sent %}
 <p class="mt-5 flex items-center gap-2 rounded bg-teal-soft text-teal px-4 py-3" role="status">
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>
-  Open signal sent to lot {{ n }} at {{ sent }}
+  Signal sent · {{ sent }}
 </p>
 {% endif %}
 {% endmacro %}
@@ -30,26 +30,30 @@
 
 {% elif state == "locked" %}
   <h2 class="mt-6 text-xl font-semibold text-teal">Lock released</h2>
-  <p class="mt-2 text-lg">Wrap the cable through your wheel and push it in until it clicks.</p>
+  <p class="mt-3 rounded bg-amber-soft text-amber font-semibold text-lg px-4 py-3">Push the lock back in after your bike is secured.</p>
   {{ sent_line() }}
-  <p class="mt-4 text-stone">Your parking started at {{ session.start_time | sgt_time }}. When you come back, scan this QR code again to unlock.</p>
+  <p class="mt-2 text-sm text-stone">Your parking started at {{ session.start_time | sgt_time }}. When you come back, scan this QR code again to unlock.</p>
   <div class="mt-auto pt-8">
     <a href="/lot/{{ lot_ref }}" class="btn-primary w-full">Done, my bike is locked</a>
-    <form method="post" action="/lot/{{ lot_ref }}/open" class="mt-4 text-stone">
+    <form method="post" action="/lot/{{ lot_ref }}/open" class="mt-4 text-sm text-stone">
       Cable didn't come out? <button class="text-teal font-semibold underline underline-offset-2">Release again</button>
     </form>
   </div>
 
 {% elif state == "mine" %}
-  <p class="mt-6 text-lg">Your bike is parked here since <strong class="font-semibold">{{ session.start_time | sgt_time }}</strong>.</p>
-  <p class="mt-1 text-stone">Parked for {{ session.start_time | parked_for }}</p>
+  <p class="mt-6 flex items-center gap-2 rounded bg-teal-soft text-teal font-semibold text-lg px-4 py-3" role="status">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    Your bike is parked and locked
+  </p>
+  <p class="mt-4 text-lg">Parked since <strong class="font-semibold">{{ session.start_time | sgt_time }}</strong>.</p>
+  <p class="mt-1 text-stone">Total time: {{ session.start_time | parked_for }}</p>
   <form method="post" action="/lot/{{ lot_ref }}/unlock" class="mt-auto pt-8">
     <button class="btn-primary w-full">Unlock</button>
   </form>
 
 {% elif state == "released" %}
   <h2 class="mt-6 text-xl font-semibold text-teal">Unlocked</h2>
-  <p class="mt-2 text-lg">Please take your bike and push the cable back in.</p>
+  <p class="mt-3 rounded bg-amber-soft text-amber font-semibold text-lg px-4 py-3">Please take your bike and push the cable back in.</p>
   {{ sent_line() }}
   <div class="mt-auto pt-8">
     <a href="/" class="btn-primary w-full">Done</a>

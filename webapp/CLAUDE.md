@@ -18,6 +18,7 @@ Customer journey maps: **`design/JOURNEYMAP.md`**. follow the flows of the user 
 |---|---|---|
 | `/` | anyone | Map of stations with free counts; tap a pin → station sheet (`/space/{id}/sheet`); free lots in the grid link to their lot page. Pins + sheet refresh every 5 s |
 | `/lot/{lot_ref}` | cyclist | Opened by the QR, e.g. `/lot/space1_lot3`. Shows lot state and the right action: **Use this lot** (free), **Unlock** (taken by me), "Lot in use" (taken by someone else). After Use: Done / Release again; after Unlock: Done / Unlock again; each press shows "Open signal sent … at 14:52:03" |
+| `/my-parking` | logged-in user | Tab bar "My parking": current bike(s) (lot still points at the session: taken / releasing / awaiting_lock, plus `pending_lock_lot_id`) with lock badge and link to the lot page; awaiting_lock = "lock still open" card; recent parkings (`by-user` index, last 20). Refreshes every 5 s |
 | `/login`, `/signup` | anyone | Username + password (sign-up also asks for email; cyclists only). Redirect back to where the user came from (`?next=`) |
 | `/profile` | anyone | Logged in: name, role, Connect Telegram, officer console link, **Log out**. Logged out: Log in / Create an account |
 | `/connect-telegram` | logged-in cyclist | Part of sign-up: open `t.me/<bot>?start=<code>`, then **Done** → `getUpdates` → save `telegram_chat_id`. Can be skipped and done later |
@@ -40,7 +41,7 @@ webapp/
     base.py          the interface (method names below)
     fake.py          in-memory version, seeded from starting_data.py + test accounts
     aws.py           boto3 version (DynamoDB, IoT publish, Cognito)
-  pages/             public.py, lot.py, auth_pages.py, officer.py, dev.py
+  pages/             public.py, lot.py, parking.py, auth_pages.py, officer.py, dev.py
   templates/         Jinja2: _phone.html (phone layout), _tabbar.html, page templates, HTMX partials
   static/            app.css, map.js, mini-map.js, officer.js
   run.sh             one-command start (venv, packages, .env, server)
@@ -55,7 +56,7 @@ Interface (`backend/base.py`; keep fake and aws in sync):
 - Users: `get_user`, `authenticate`, `sign_up` (cyclists), `set_telegram_chat_id`
 - Spaces and lots: `list_spaces`, `get_space`, `list_lots(space_id)`, `get_lot`, `claim_lot` (conditional free → taken + session), `mark_releasing` (+ close session; officers skip the owner check)
 - Commands: `publish_open(lot_id) -> request_id`
-- Read-only: `get_session`, `list_open_sessions`, `list_sessions_since(iso)` (open or ended after iso; officer 24 h charts, a Scan), `list_tamper_events`
+- Read-only: `get_session`, `list_open_sessions`, `list_sessions_since(iso)` (open or ended after iso; officer 24 h charts, a Scan), `list_tamper_events`, `list_user_sessions(user_id, limit)` (My parking; `by-user` index, newest first)
 - Fake only (for `/dev`): `simulate_event`, `flag_overstays`
 
 Fake backend: `/dev` simulates the ESP32 and the overstay Lambda; after an Unlock it also sends `bike_left` by itself (~8 s). Fake-only test accounts (shown on the login page): `officer` / `officer1`, `alice` / `alice123`; never used with `BACKEND=aws`.

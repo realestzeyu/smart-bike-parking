@@ -137,6 +137,10 @@ class FakeBackend(Backend):
     def list_tamper_events(self):
         return sorted((dict(e) for e in self.tamper_events.values()), key=lambda e: e["detected_time"], reverse=True)
 
+    def list_user_sessions(self, user_id, limit=20):
+        mine = (dict(s) for s in self.sessions.values() if s["user_id"] == user_id)
+        return sorted(mine, key=lambda s: s["start_time"], reverse=True)[:limit]
+
     # Fake-only: what the ESP32 + handle_event / check_overstay would do
     def simulate_event(self, space_id, lot_id, event_type):
         with self._lock:
