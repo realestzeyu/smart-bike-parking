@@ -165,7 +165,8 @@ def on_bike_left(item, status, when):
         update_lot(
             item,
             "releasing",
-            "SET #s = :free, bike_present = :f REMOVE bike_present_since, user_id, session_id",
+            "SET #s = :free, bike_present = :f "
+            "REMOVE bike_present_since, user_id, session_id, lock_reminded_at",
             {":free": "free", ":f": False},
             extra_condition=LOCK_IS_CLOSED,
         )
@@ -176,19 +177,15 @@ def on_bike_left(item, status, when):
         update_lot(
             item,
             "releasing",
-            "SET #s = :await, bike_present = :f, awaiting_lock_since = :now REMOVE bike_present_since",
+            "SET #s = :await, bike_present = :f, awaiting_lock_since = :now "
+            "REMOVE bike_present_since, lock_reminded_at",  # fresh reminder for this new situation
             {":await": "awaiting_lock", ":f": False, ":now": c.iso(when)},
             extra_condition=LOCK_IS_OPEN,
         )
         set_pending_lock(item.get("user_id"), item["id"])
-        notified = c.alert_owner(
-            item.get("user_id"), item["space_id"], item["id"],
-            lambda label: (
-                f"🔓 You took your bike from {label} but the lock is still open. "
-                "Please go back and click the cable in. You can't use another lot until it's closed."
-            ),
-        )
-        return {"action": "awaiting_lock", "notified": notified}
+        # No Telegram here: many cyclists push the metal piece back in a few seconds after wheeling
+        # the bike out. check_overstay reminds them only if it's still open after LOCK_REMINDER_MINUTES.
+        return {"action": "awaiting_lock"}
 
     if status == "awaiting_lock":
         # Already waiting for the lock; nothing else to change.
@@ -265,18 +262,22 @@ def on_lock_closed(item, status, when):
         update_lot(
             item,
             "awaiting_lock",
-            "SET #s = :free, lock_closed = :t REMOVE user_id, session_id, awaiting_lock_since",
+            "SET #s = :free, lock_closed = :t "
+            "REMOVE user_id, session_id, awaiting_lock_since, lock_reminded_at",
             {":free": "free", ":t": True},
         )
         clear_pending_lock(item.get("user_id"), item["id"])
-        notified = c.alert_owner(
-            item.get("user_id"), item["space_id"], item["id"],
-            lambda label: f"✅ Lock at {label} closed. Thanks! You can use any lot again.",
-        )
+        notified = False
+        if item.get("lock_reminded_at"):
+            # Only confirm if we reminded them; a quick close needs no messages at all.
+            notified = c.alert_owner(
+                item.get("user_id"), item["space_id"], item["id"],
+                lambda label: f"✅ Lock at {label} closed. Thanks! You can use any lot again.",
+            )
         return {"action": "lock_closed_freed", "notified": notified}
 
     # Any other status: just record it (e.g. after a claim it confirms the bike is locked).
-    update_lot(item, None, "SET lock_closed = :t", {":t": True})
+    update_lot(item, None, "SET lock_closed = :t REMOVE lock_reminded_at", {":t": True})
     return {"action": "lock_closed"}
 
 

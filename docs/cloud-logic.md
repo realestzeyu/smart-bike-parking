@@ -42,7 +42,7 @@ flowchart TD
     E -- bike_left --> G{"lot status?"}
     G -- "releasing + lock closed" --> G1["status = free, bike_present = false<br/>remove bike_present_since, user_id, session_id"]
     G -- "releasing + lock OPEN" --> G4["status = awaiting_lock, awaiting_lock_since = now<br/>keep user_id; user.pending_lock_lot_id = lot"]
-    G4 --> T3["Telegram owner:<br/>lock still open, close it;<br/>no new lots until then"]
+    G4 --> T3["No message yet: check_overstay reminds<br/>only if still open after LOCK_REMINDER_MINUTES"]
     G -- taken --> G2["bike_present = false, remove bike_present_since<br/>put tamper event: lot_id + session_id"]
     G2 --> T1["Telegram owner:<br/>bike left without unlock (suspected theft)"]
     G -- "free / awaiting_lock" --> G3["bike_present = false<br/>remove bike_present_since"]
@@ -58,7 +58,7 @@ flowchart TD
     E -- lock_opened --> K1["lock_closed = false"]
     E -- lock_closed --> K{"lot status?"}
     K -- awaiting_lock --> K2["status = free, lock_closed = true<br/>remove user_id, session_id, awaiting_lock_since<br/>remove user.pending_lock_lot_id"]
-    K2 --> T4["Telegram owner: lock closed, thanks"]
+    K2 --> T4["Telegram 'lock closed, thanks'<br/>only if a reminder was sent"]
     K -- other --> K3["lock_closed = true<br/>(after a claim: bike confirmed locked)"]
 
     G1 --> W{"Write condition<br/>status / lock state unchanged?"}
@@ -86,20 +86,31 @@ Conditional writes: lot updates carry `ConditionExpression: status = :read_statu
 
 ## 3. `check_overstay` (EventBridge Scheduler: every 1 min demo, 15 min deployment)
 
+Each tick runs two checks: **(a) overstay** and **(b) lock reminders**.
+
 ```mermaid
 flowchart TD
-    A["Scheduler tick"] --> B["Query open-sessions index<br/>is_open = Y and start_time older than limit<br/>(all pages)"]
-    B --> C{"Any sessions?"}
-    C -- no --> Z["Log summary, done"]
-    C -- yes --> D["For each session"]
-    D --> E["Set overstay_notified_at = now<br/>only if not already set"]
+    A["Scheduler tick"] --> B["(a) Query open-sessions index<br/>is_open = Y and start_time older than limit<br/>(all pages)"]
+    B --> D["For each session"]
+    D --> S{"Lot still has the bike?"}
+    S -- "no: suspected theft,<br/>already alerted" --> D
+    S -- yes --> E["Set overstay_notified_at = now<br/>only if not already set"]
     E --> F{"Update succeeded?"}
     F -- "no: already flagged" --> D
-    F -- yes --> G["Marked suspected abandoned<br/>(officer dashboard sees it)"]
-    G --> H{"Owner has telegram_chat_id<br/>and bot token set?"}
+    F -- yes --> H{"Owner has telegram_chat_id<br/>and bot token set?"}
     H -- no --> D
-    H -- yes --> J["Telegram owner:<br/>your bike at address, lot N<br/>parked for X, please collect it"]
+    H -- yes --> J["Telegram owner:<br/>parked for X, please collect it"]
     J --> D
+
+    A --> R["(b) Scan lots: lock_closed = false,<br/>no lock_reminded_at,<br/>status awaiting_lock or taken"]
+    R --> R1{"status?"}
+    R1 -- awaiting_lock --> R2{"awaiting_lock_since older<br/>than LOCK_REMINDER_MINUTES?"}
+    R1 -- "taken + bike present" --> R3{"claim time (session start)<br/>older than LOCK_REMINDER_MINUTES?"}
+    R2 -- yes --> R4["Set lock_reminded_at = now<br/>only if lot unchanged"]
+    R3 -- yes --> R4
+    R4 --> R5["One Telegram:<br/>lock still open, please close it /<br/>your bike isn't locked yet"]
+    R2 -- no --> RZ["Wait for next tick"]
+    R3 -- no --> RZ
 ```
 
 ## 4. Telegram alert (helper in both Lambdas)
@@ -126,6 +137,8 @@ flowchart TD
     C --> E["Stuck releasing:<br/>status = releasing and session end_time<br/>older than RELEASE_TIMEOUT_MINUTES"]
     C --> F["Unregistered bike:<br/>status = free, bike_present = true,<br/>bike_present_since older than UNREGISTERED_LIMIT_MINUTES"]
     C --> G["Left unlocked:<br/>status = awaiting_lock and awaiting_lock_since<br/>older than RELEASE_TIMEOUT_MINUTES"]
+    C --> H["Claimed but not locked:<br/>status = taken, bike_present,<br/>lock_closed = false, lock_reminded_at set"]
+    C --> I["Suspected theft:<br/>status = taken and bike_present = false"]
 ```
 
 ## 5b. Example: cyclist rides off with the lock open
@@ -206,7 +219,23 @@ One JSON line per handled event or overstay run, e.g.
 
 CloudWatch Logs Insights queries over these give event counts, alert success rate, and ESP32-to-cloud latency (when the ESP32 sends `ts`).
 
-## 9. Testing plan
+## 9. Scenario walkthroughs (reviewed 17 Nov)
+
+Start: lot `space1#lot1` `free`, `bike_present=false`, `lock_closed=true` (the cable's metal piece is stored in the lock). Demo limits: overstay 2 min, lock reminder 1 min, release timeout 2 min, unregistered 2 min, tamper cooldown 60 s.
+
+**1. Park and lock.** `bike_arrived` → `bike_present=true`, `bike_present_since`. Claim (web app; needs bike present, lot free, no `pending_lock_lot_id`) → lot `taken`, `user_id`, `session_id`; session open (`is_open=Y`). `open` → `lock_opened` (`lock_closed=false`). Metal piece pushed in → `lock_closed` (`lock_closed=true`, page shows "Locked ✓"). Never pushed in → after 1 min one "not locked yet" Telegram + officer flag *Claimed but not locked*.
+
+**2. Unlock and close properly.** Unlock → lot `releasing`, session `end_time`, `is_open` removed → `open` → `lock_opened`. Metal piece pushed back in → `lock_closed`. `bike_left` → lot `free`. Either order works: if the bike leaves first, the lot is briefly `awaiting_lock` and the `lock_closed` a few seconds later frees it **with no messages** (reminder only after 1 min).
+
+**3. Tampering.** One shaking episode → one tamper row + one Telegram (taken), repeats within 60 s dropped (ESP32 cooldown + cloud `last_tamper_at`). Free lot → row without session, no alert. Releasing → row with session, no alert (owner). Bike gone while `taken` → suspected theft row + Telegram, lot stays `taken` (officer flag *Suspected theft*); no later "please collect" overstay message; Unlock / Force unlock then frees the lot directly.
+
+**4. Unregistered bike.** `bike_arrived` on a `free` lot, no claim → officer flag *Unregistered bike* after 2 min; tamper logged without alert; `bike_left` clears it.
+
+**5. Abandoned bike.** `check_overstay` flags open sessions older than 2 min once (`overstay_notified_at`) and Telegrams the owner (flag kept as history after unlock). Skipped if the bike already left. Unregistered abandoned bikes = scenario 4.
+
+**6. Unlock but forgot to lock.** `bike_left` with lock open → lot `awaiting_lock`, account tied (`pending_lock_lot_id`, claims blocked), page prompt immediately. Still open after 1 min → one Telegram reminder. After 2 min → officer flag *Left unlocked*. `lock_closed` (cyclist or staff) → lot `free`, account released, "thanks" (because a reminder was sent).
+
+## 10. Testing plan
 
 - **Unit tests** (`lambdas/tests/`, pytest + moto, dev-only, not deployed): one test per branch of diagrams 2 and 3, plus the race in diagram 7. Telegram is faked.
 - **Test data:** `infra/test_data.sh` puts `space1`, `space1#lot1` and a test user (create-only), plus a reset. Replaced later by `webapp/load_starting_data.py`.
@@ -219,7 +248,7 @@ CloudWatch Logs Insights queries over these give event counts, alert success rat
 | `lambdas/handle_event/handler.py` | diagram 2 + the race retry (diagram 7) |
 | `lambdas/check_overstay/handler.py` | diagram 3 |
 | `lambdas/shared/sbp_common.py` | time, JSON logging, DynamoDB tables, Telegram helper (diagram 4); zipped into both Lambdas by `infra/lambdas.tf` |
-| `lambdas/tests/` | 34 unit tests (pytest + moto) |
+| `lambdas/tests/` | 42 unit tests (pytest + moto) |
 | `infra/test_data.sh` | test data + web-app stand-ins (`load`, `claim`, `unlock`, `show`, `reset`) |
 
 Run the unit tests (from `lambdas/`): `python -m venv .venv`, install `requirements-dev.txt`, then `python -m pytest tests -q`. See `infra/README.md` for the end-to-end test on AWS.

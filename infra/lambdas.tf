@@ -28,16 +28,24 @@ locals {
     }
     check_overstay = {
       timeout = 30
-      env     = { OVERSTAY_LIMIT_MINUTES = tostring(var.overstay_limit_minutes) }
-      # Queries the open-sessions index, sets overstay_notified_at, reads the owner's telegram_chat_id.
+      env = {
+        OVERSTAY_LIMIT_MINUTES = tostring(var.overstay_limit_minutes)
+        LOCK_REMINDER_MINUTES  = tostring(var.lock_reminder_minutes)
+      }
+      # Overstay: queries open-sessions, sets overstay_notified_at, checks the lot still has the bike.
+      # Lock reminders: scans lots with the lock open, reads the claim time, sets lock_reminded_at.
       statements = [
         {
           actions   = ["dynamodb:Query"]
           resources = ["${aws_dynamodb_table.sessions.arn}/index/open-sessions"]
         },
         {
-          actions   = ["dynamodb:UpdateItem"]
+          actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
           resources = [aws_dynamodb_table.sessions.arn]
+        },
+        {
+          actions   = ["dynamodb:Scan", "dynamodb:GetItem", "dynamodb:UpdateItem"]
+          resources = [aws_dynamodb_table.lots.arn]
         },
         {
           actions   = ["dynamodb:GetItem"]

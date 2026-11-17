@@ -73,7 +73,7 @@ case "${1:-}" in
 
   reset)
     aws dynamodb update-item "${P[@]}" --table-name sbp-lots --key "$LOT_KEY" \
-      --update-expression "SET #s = :free, bike_present = :f, lock_closed = :t REMOVE bike_present_since, user_id, session_id, awaiting_lock_since" \
+      --update-expression "SET #s = :free, bike_present = :f, lock_closed = :t REMOVE bike_present_since, user_id, session_id, awaiting_lock_since, lock_reminded_at, last_tamper_at" \
       --expression-attribute-names '{"#s":"status"}' \
       --expression-attribute-values '{":free":{"S":"free"},":f":{"BOOL":false},":t":{"BOOL":true}}'
     aws dynamodb update-item "${P[@]}" --table-name sbp-users --key '{"id":{"S":"'$USER_ID'"}}' \

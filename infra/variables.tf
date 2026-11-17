@@ -29,6 +29,12 @@ variable "overstay_limit_minutes" {
   default     = 2
 }
 
+variable "lock_reminder_minutes" {
+  description = "Grace period before a 'lock still open' / 'bike not locked yet' Telegram reminder (sent once per lot)."
+  type        = number
+  default     = 1
+}
+
 variable "tamper_cooldown_seconds" {
   description = "Per-lot tamper cooldown: repeats within this window are dropped (no row, no Telegram)."
   type        = number

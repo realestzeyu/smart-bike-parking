@@ -4,6 +4,8 @@ What the web app side and the AWS side have agreed on: tables and fields, who wr
 
 **Status: updated 10 Nov 2026.** Items marked **[?]** need a decision.
 
+**Scenario review fixes (17 Nov, AWS side):** (F1) no instant "lock still open" message: the reminder comes from the scheduled check only if the lock is still open after `LOCK_REMINDER_MINUTES`, and "thanks" only follows a reminder; (F2) no overstay message for a bike that already left (suspected theft); (F3) web app: Unlock / Force unlock on a lot whose bike is gone frees it directly; (F4) "claimed but not locked" reminder + officer flag. New field **`lot.lock_reminded_at`**.
+
 **Tamper de-duplication (17 Nov, AWS side):** a burst of vibration = **one** tamper record and **one** Telegram. ESP32: threshold + 60 s cooldown (section 4). Cloud safety net: per-lot cooldown via new field **`lot.last_tamper_at`** (`TAMPER_COOLDOWN_SECONDS = 60`); repeats inside it are dropped (log only).
 
 **Lock-state enforcement (17 Nov, AWS side):** the solenoid lock gets a **feedback wire** (latch status). The ESP32 sends **`lock_closed` / `lock_opened`** state changes. A cyclist who takes their bike but leaves the lock open is **tied to the lot** (new status **`awaiting_lock`**, `users.pending_lock_lot_id`) and **can't claim another lot** until the lock is closed. New fields: `lot.lock_closed`, `lot.awaiting_lock_since`, `user.pending_lock_lot_id`. See section 3.
@@ -77,6 +79,7 @@ erDiagram
         boolean lock_closed "from lock feedback wire; missing = closed"
         datetime awaiting_lock_since "set when bike left with lock open"
         datetime last_tamper_at "start of the latest tamper episode (cooldown)"
+        datetime lock_reminded_at "lock reminder sent (once); removed when the lock closes"
         string user_id FK "current owner; removed when free"
         string session_id FK "current session; removed when free"
     }
@@ -130,6 +133,7 @@ Key: `space_id` (S, partition) + `id` (S, sort). `Query(space_id)` = every lot i
 | `lock_closed` | BOOL | from the lock's feedback wire (`lock_closed` / `lock_opened`). **Missing = treated as closed** (lots without the wire behave as before). Starting data sets `true` | `handle_event`, starting-data script |
 | `awaiting_lock_since` | datetime | when the bike left with the lock still open; **removed** when the lock closes | `handle_event` |
 | `last_tamper_at` | datetime | when the latest tamper **episode** started; a `tamper` within `TAMPER_COOLDOWN_SECONDS` of it is a repeat and is dropped | `handle_event` |
+| `lock_reminded_at` | datetime | when the one "lock still open" / "not locked yet" Telegram was sent; **removed** when the lock closes, the lot is freed, or it enters `awaiting_lock` (fresh reminder for the new situation). Web app: remove it too whenever it frees a lot | `check_overstay` (sets), `handle_event` (removes) |
 | `user_id` | S | current owner; **removed** when free | web app, `handle_event` (removes) |
 | `session_id` | S | `id` of the current session; **removed** when free | web app, `handle_event` (removes) |
 
@@ -224,8 +228,9 @@ awaiting_lock ──(handle_event: lock_closed)──▶ free                   
 | free → taken | web app | lot: `status=taken`, `user_id`, `session_id`, **condition `status = free`** (fails → "Lot in use"); put session (`id`, `lot_id`, `user_id`, `start_time`, `is_open = "Y"`) |
 | taken → releasing | web app | lot: `status=releasing` (keeps `user_id`, `session_id`); session: set `end_time`, **remove `is_open`** |
 | releasing → free | `handle_event` on `bike_left` **with the lock closed** | lot: `status=free`, remove `user_id`, `session_id` |
-| releasing → awaiting_lock | `handle_event` on `bike_left` **with the lock open** | lot: `status=awaiting_lock`, `awaiting_lock_since`; keeps `user_id`; user: `pending_lock_lot_id`; Telegram reminder |
-| awaiting_lock → free | `handle_event` on `lock_closed` | lot: `status=free`, `lock_closed=true`, remove `user_id`, `session_id`, `awaiting_lock_since`; user: remove `pending_lock_lot_id`; Telegram "thanks" |
+| releasing → awaiting_lock | `handle_event` on `bike_left` **with the lock open** | lot: `status=awaiting_lock`, `awaiting_lock_since`; keeps `user_id`; user: `pending_lock_lot_id`. **No message yet**: `check_overstay` sends one reminder if still open after `LOCK_REMINDER_MINUTES` |
+| awaiting_lock → free | `handle_event` on `lock_closed` | lot: `status=free`, `lock_closed=true`, remove `user_id`, `session_id`, `awaiting_lock_since`, `lock_reminded_at`; user: remove `pending_lock_lot_id`; Telegram "thanks" **only if a reminder was sent** |
+| taken → free (bike already gone) | web app on Unlock / Force unlock when `bike_present = false` | lot: `status=free`, remove `user_id`, `session_id`, `lock_reminded_at`; session: `end_time`, remove `is_open`. No `open` command needed (see web app rules) |
 
 The ESP32 only reports sensor state changes (IR, vibration, lock feedback); it **never** locks or decides anything on its own. The lock is closed by hand (cable clicked in); the solenoid only opens on the cloud's `open` command; the lock's **feedback wire** tells the ESP32 whether the latch is closed.
 
@@ -239,7 +244,7 @@ The lock is **power-to-open (fail-secure)**: unpowered = locked; the ESP32 pulse
 ### "Unlock"
 1. Only `lot.user_id` may unlock (officers skip this for Force unlock).
 2. taken → releasing + close the session, then publish `open`.
-3. **Confirmation = `bike_left`.** The page polls the lot: `free` means done; **`awaiting_lock`** means "You took your bike but the lock is open: please click the cable back in" (stays until `lock_closed`).
+3. **Confirmation = `bike_left`.** The page polls the lot: `free` means done; **`awaiting_lock`** means "You took your bike but the lock is open: please push the metal piece back in" (stays until `lock_closed`; this on-page prompt is immediate, the Telegram reminder only comes after `LOCK_REMINDER_MINUTES`).
 4. While `releasing`, the owner can tap **Unlock again** (re-publish `open`).
 5. No `bike_left` within ~2 min → "Lock didn't respond, please contact staff" (officer Force unlock / manual release).
 6. The cyclist may close the lock before or after taking the bike: closed first → `bike_left` frees the lot directly; closed after → `awaiting_lock` → `lock_closed` frees it.
@@ -254,6 +259,8 @@ The lock is **power-to-open (fail-secure)**: unpowered = locked; the ESP32 pulse
 ### Web app rules that protect the flow
 - **Claim only when `bike_present = true`** (nobody can claim an empty lot remotely).
 - **Claim only when the user has no `pending_lock_lot_id`.** Otherwise show "Close the lock at <address>, lot N first".
+- **Unlock / Force unlock when the bike is already gone** (`status = taken` or `releasing`, `bike_present = false`, e.g. after a suspected theft): free the lot directly in one transaction (lot → `free`, remove `user_id`, `session_id`, `lock_reminded_at`; session `end_time`, remove `is_open`). Don't wait for `bike_left`: it already happened, so the lot would otherwise stay stuck. Show "Your bike was no longer detected at this lot".
+- Whenever the web app frees a lot (Cancel, the rule above), also remove `lock_reminded_at`.
 - The web app never sets a lot to `free` from `releasing` or `awaiting_lock`; only `handle_event` does. (Officer Force unlock on an `awaiting_lock` lot isn't needed: the lock is already open.)
 
 ### Officer view: derived flags (computed when the page loads; nothing stored)
@@ -263,6 +270,8 @@ The lock is **power-to-open (fail-secure)**: unpowered = locked; the ESP32 pulse
 | **Stuck releasing** | lot `status = releasing` and its session's `end_time` older than `RELEASE_TIMEOUT_MINUTES` (demo `2`) | unlock sent but the bike never left: lock may have failed, or the bike was left behind after the session closed |
 | **Unregistered bike** | lot `status = free`, `bike_present = true`, `bike_present_since` older than `UNREGISTERED_LIMIT_MINUTES` (demo `2`, deployment e.g. `1440`) | bike parked without using the system (the classic abandoned bike) |
 | **Left unlocked** | lot `status = awaiting_lock` and `awaiting_lock_since` older than `RELEASE_TIMEOUT_MINUTES` | cyclist rode off without closing the lock and hasn't come back (one Telegram reminder was sent; staff can close it) |
+| **Claimed but not locked** | lot `status = taken`, `bike_present = true`, `lock_closed = false`, and `lock_reminded_at` set | cyclist claimed the lot but never pushed the metal piece in: bike not secured (one Telegram nudge was sent) |
+| **Suspected theft** | lot `status = taken` and `bike_present = false` | bike left without an unlock (tamper record + Telegram already sent); resolved when the owner or an officer taps Unlock / Force unlock |
 
 Thresholds are web app settings (`.env`).
 
@@ -294,16 +303,17 @@ Diagrams: **`docs/cloud-logic.md`**.
 
 **`handle_event`**
 - `bike_arrived` → `bike_present = true`, `bike_present_since = now` (if not set).
-- `bike_left` → `bike_present = false`, remove `bike_present_since`; then by status: `releasing` + lock closed → `free` (remove `user_id`, `session_id`); `releasing` + lock **open** → `awaiting_lock` (+ `awaiting_lock_since`, user `pending_lock_lot_id`, Telegram reminder); `taken` → tamper event (`lot_id`, `session_id`) + Telegram (suspected theft); `free` / `awaiting_lock` → nothing more.
+- `bike_left` → `bike_present = false`, remove `bike_present_since`; then by status: `releasing` + lock closed → `free` (remove `user_id`, `session_id`, `lock_reminded_at`); `releasing` + lock **open** → `awaiting_lock` (+ `awaiting_lock_since`, user `pending_lock_lot_id`, remove `lock_reminded_at`; **no Telegram yet**); `taken` → tamper event (`lot_id`, `session_id`) + Telegram (suspected theft); `free` / `awaiting_lock` → nothing more.
 - `tamper` → **cooldown first:** set `lot.last_tamper_at = now` only if it's missing or older than `TAMPER_COOLDOWN_SECONDS` (atomic conditional write, so parallel Lambda runs can't both pass). Inside the cooldown → **drop** (no row, no Telegram, log line `tamper_repeat_dropped`). Otherwise a new episode: write a tamper event with `lot_id`. `taken`: add `session_id`, Telegram to the owner (`lot.user_id`) if they have `telegram_chat_id`, set `notified`. `releasing`: add `session_id`, no alert. `free` / `awaiting_lock`: no `session_id`, no alert. (`notified = false` when no alert sent.)
-- `lock_closed` → `lock_closed = true`; if `awaiting_lock` → `free` (remove `user_id`, `session_id`, `awaiting_lock_since`), remove the user's `pending_lock_lot_id`, Telegram "thanks". `lock_opened` → `lock_closed = false`.
+- `lock_closed` → `lock_closed = true`, remove `lock_reminded_at`; if `awaiting_lock` → `free` (remove `user_id`, `session_id`, `awaiting_lock_since`), remove the user's `pending_lock_lot_id`, Telegram "thanks" **only if a reminder had been sent**. `lock_opened` → `lock_closed = false`.
 - The `releasing` branch of `bike_left` is also conditional on the lock state it read, so a `lock_closed` arriving at the same moment can't wrongly tie the account.
 - Unknown lot or bad payload → log and ignore (writes use `attribute_exists`, so a wrong topic never creates a lot).
 - **Conditional writes:** each lot update includes `status = <status just read>`. If it fails (the web app changed the lot meanwhile), re-read and decide again (max 3 tries).
 - Telegram failure never blocks the DB write. DynamoDB errors raise → Lambda retries (up to 2); writes are safe to repeat (worst case: a duplicate tamper row).
 
 **`check_overstay`** (EventBridge Scheduler; demo every 1 min, deployment every 15 min)
-- Query `open-sessions` (`is_open = "Y"`, `start_time` < now − `OVERSTAY_LIMIT_MINUTES`, all pages). For each: set `overstay_notified_at = now` **only if not set** (marks suspected abandoned even without Telegram; overlapping runs can't double-alert), then Telegram the owner if they have `telegram_chat_id`.
+- **Overstay:** query `open-sessions` (`is_open = "Y"`, `start_time` < now − `OVERSTAY_LIMIT_MINUTES`, all pages). Skip sessions whose lot has `bike_present = false` (suspected theft, already alerted). For each other: set `overstay_notified_at = now` **only if not set** (marks suspected abandoned even without Telegram; overlapping runs can't double-alert), then Telegram the owner if they have `telegram_chat_id`.
+- **Lock reminders:** scan `sbp-lots` for `lock_closed = false`, no `lock_reminded_at`, `status` in (`awaiting_lock`, `taken`). Due when `awaiting_lock_since` (awaiting_lock) or the session's `start_time` (taken, bike present) is older than `LOCK_REMINDER_MINUTES`. Set `lock_reminded_at` only if the lot is unchanged, then one Telegram: "the lock at … is still open" / "your bike at … isn't locked yet".
 
 **Telegram messages** include the space `address`, lot number and time in SGT (UTC+8). Both Lambdas need `GetItem` on `sbp-spaces` and `sbp-users`; `handle_event` also needs `UpdateItem` on `sbp-users` (`pending_lock_lot_id`).
 
@@ -333,7 +343,7 @@ Diagrams: **`docs/cloud-logic.md`**.
 `BACKEND`, `SESSION_SECRET`, `AWS_PROFILE`, `AWS_REGION`, `IOT_DATA_ENDPOINT`, `TABLE_PREFIX`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `RELEASE_TIMEOUT_MINUTES` (demo `2`), `UNREGISTERED_LIMIT_MINUTES` (demo `2`, deployment e.g. `1440`)
 
 ### Lambda environment variables (Terraform)
-`TABLE_PREFIX`, `TELEGRAM_BOT_TOKEN` (sensitive variable), `OVERSTAY_LIMIT_MINUTES` (demo `2`, deployment e.g. `4320` = 3 days), `TAMPER_COOLDOWN_SECONDS` (`handle_event`, default `60`)
+`TABLE_PREFIX`, `TELEGRAM_BOT_TOKEN` (sensitive variable), `OVERSTAY_LIMIT_MINUTES` (demo `2`, deployment e.g. `4320` = 3 days), `TAMPER_COOLDOWN_SECONDS` (`handle_event`, default `60`), `LOCK_REMINDER_MINUTES` (`check_overstay`, default `1`)
 
 ### Telegram
 - One bot. Whoever creates it (BotFather) shares the token **privately** with both sides. Never in the repo.

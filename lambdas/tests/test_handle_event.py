@@ -180,28 +180,44 @@ def test_bike_left_with_lock_closed_frees_the_lot(db, telegram, handle_event):
     assert "pending_lock_lot_id" not in get_user(db)
 
 
-def test_bike_left_with_lock_open_ties_account_to_lot(db, telegram, handle_event):
+def test_bike_left_with_lock_open_ties_account_without_instant_reminder(db, telegram, handle_event):
+    """F1: account tied immediately, but no Telegram yet (check_overstay reminds after the grace period)."""
     put_lot(db, **RELEASING, lock_closed=False)
-    assert handle_event.lambda_handler(event("bike_left"), None) == {"action": "awaiting_lock", "notified": True}
+    assert handle_event.lambda_handler(event("bike_left"), None) == {"action": "awaiting_lock"}
     lot = get_lot(db)
     assert lot["status"] == "awaiting_lock" and lot["user_id"] == "alice"
     assert lot["bike_present"] is False and lot["awaiting_lock_since"].endswith("Z")
     assert get_user(db)["pending_lock_lot_id"] == "space1#lot1"
-    [(_, text)] = telegram.sent
-    assert "lock is still open" in text
+    assert telegram.sent == []
 
 
-def test_lock_closed_while_awaiting_frees_lot_and_releases_account(db, telegram, handle_event):
-    put_lot(db, **{**RELEASING, "status": "awaiting_lock", "bike_present": False,
-                   "awaiting_lock_since": "2026-11-17T01:00:00Z"}, lock_closed=False)
+AWAITING = {**RELEASING, "status": "awaiting_lock", "bike_present": False,
+            "awaiting_lock_since": "2026-11-17T01:00:00Z"}
+
+
+def tie_alice(db):
     db.Table("sbp-users").update_item(Key={"id": "alice"}, UpdateExpression="SET pending_lock_lot_id = :l",
                                       ExpressionAttributeValues={":l": "space1#lot1"})
-    assert handle_event.lambda_handler(event("lock_closed"), None)["action"] == "lock_closed_freed"
+
+
+def test_quick_close_frees_lot_with_no_messages(db, telegram, handle_event):
+    """F1: wheeled the bike out, then pushed the metal piece in before any reminder: silent."""
+    put_lot(db, **AWAITING, lock_closed=False)
+    tie_alice(db)
+    assert handle_event.lambda_handler(event("lock_closed"), None) == {"action": "lock_closed_freed", "notified": False}
     lot = get_lot(db)
     assert lot["status"] == "free" and lot["lock_closed"] is True
     for gone in ("user_id", "session_id", "awaiting_lock_since"):
         assert gone not in lot
     assert "pending_lock_lot_id" not in get_user(db)
+    assert telegram.sent == []
+
+
+def test_close_after_reminder_sends_thanks(db, telegram, handle_event):
+    put_lot(db, **AWAITING, lock_closed=False, lock_reminded_at="2026-11-17T01:02:00Z")
+    tie_alice(db)
+    assert handle_event.lambda_handler(event("lock_closed"), None)["notified"] is True
+    assert "lock_reminded_at" not in get_lot(db)
     assert "closed" in telegram.sent[0][1]
 
 

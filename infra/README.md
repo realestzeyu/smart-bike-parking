@@ -163,7 +163,7 @@ aws logs tail /aws/lambda/sbp-check-overstay --since 5m $P          # "action": 
 **Unit tests** (no AWS needed), from `../lambdas`:
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt   # Windows: .venv\Scripts\...
-.venv/bin/python -m pytest tests -q                                      # 34 passed
+.venv/bin/python -m pytest tests -q                                      # 42 passed
 ```
 
 **d) The web app key is limited correctly**
@@ -233,6 +233,7 @@ Always read the plan before applying. Anything marked **destroy** or **must be r
 | `budget_limit_usd` | `5` | Monthly budget |
 | `telegram_bot_token` | `""` | Lambdas skip alerts while empty |
 | `overstay_check_enabled` | `true` | Turns the overstay schedule on/off |
+| `lock_reminder_minutes` | `1` | Grace period before the one "lock still open" / "bike not locked yet" Telegram reminder |
 | `tamper_cooldown_seconds` | `60` | Per-lot tamper cooldown: repeats inside it are dropped (no row, no Telegram) |
 | `overstay_limit_minutes` | `2` | Session age that counts as overstay / suspected abandoned |
 | `overstay_check_schedule` | `rate(1 minute)` | How often `check_overstay` runs |
