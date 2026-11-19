@@ -152,34 +152,52 @@ class AwsBackend(Backend):
 
     def mark_releasing(self, space_id, lot_id, user_id, is_officer=False):
         lot = self.get_lot(space_id, lot_id)
-        if not lot or lot.get("status") != "taken" or (not is_officer and lot.get("user_id") != user_id):
+        if not lot or lot.get("status") not in ("taken", "releasing") or not lot.get("session_id"):
             return False
-        condition, values = "#s = :taken AND session_id = :sid", {":taken": "taken", ":sid": lot["session_id"], ":rel": "releasing"}
+        if not is_officer and lot.get("user_id") != user_id:
+            return False
+        status, bike_gone = lot["status"], not lot.get("bike_present")
+        if status == "releasing" and not bike_gone:
+            return False  # already unlocking; "Unlock again" only re-sends open
+
+        # Every write checks the lot is still as we read it (a bike_left may arrive meanwhile).
+        condition = "#s = :st AND session_id = :sid"
+        values = {":st": status, ":sid": lot["session_id"]}
         if not is_officer:
             condition += " AND user_id = :u"
             values[":u"] = user_id
+        if bike_gone:
+            # agreed-names section 3: bike already gone (e.g. suspected theft) -> free the lot directly.
+            condition += " AND (attribute_not_exists(bike_present) OR bike_present = :f)"
+            values.update({":f": False, ":free": "free"})
+            update = "SET #s = :free REMOVE user_id, session_id, lock_reminded_at"
+        else:
+            condition += " AND bike_present = :t"
+            values.update({":t": True, ":rel": "releasing"})
+            update = "SET #s = :rel"
+
+        items = [{"Update": {
+            "TableName": self.t_lots,
+            "Key": _av({"space_id": space_id, "id": lot_id}),
+            "UpdateExpression": update,
+            "ConditionExpression": condition,
+            "ExpressionAttributeNames": {"#s": "status"},
+            "ExpressionAttributeValues": _av(values),
+        }}]
+        if status == "taken":  # close the session (a releasing lot's session is already closed)
+            items.append({"Update": {
+                "TableName": self.t_sessions,
+                "Key": _av({"id": lot["session_id"]}),
+                "UpdateExpression": "SET end_time = :e REMOVE is_open",
+                "ExpressionAttributeValues": _av({":e": now_iso()}),
+            }})
         try:
-            self.client.transact_write_items(TransactItems=[
-                {"Update": {
-                    "TableName": self.t_lots,
-                    "Key": _av({"space_id": space_id, "id": lot_id}),
-                    "UpdateExpression": "SET #s = :rel",
-                    "ConditionExpression": condition,
-                    "ExpressionAttributeNames": {"#s": "status"},
-                    "ExpressionAttributeValues": _av(values),
-                }},
-                {"Update": {
-                    "TableName": self.t_sessions,
-                    "Key": _av({"id": lot["session_id"]}),
-                    "UpdateExpression": "SET end_time = :e REMOVE is_open",
-                    "ExpressionAttributeValues": _av({":e": now_iso()}),
-                }},
-            ])
-            return True
+            self.client.transact_write_items(TransactItems=items)
         except ClientError as e:
             if e.response["Error"]["Code"] == "TransactionCanceledException":
                 return False
             raise
+        return "freed" if bike_gone else "releasing"
 
     # Commands
     def publish_open(self, lot_id):

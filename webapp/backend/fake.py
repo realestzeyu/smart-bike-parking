@@ -2,6 +2,7 @@
 
 Starts from the same rows as load_starting_data.py (starting_data.py).
 simulate_event() and flag_overstays() stand in for the ESP32 and the Lambdas (used by /dev).
+Lock events follow handle_event: docs/cloud-logic.md diagram 2.
 """
 
 import copy
@@ -94,15 +95,24 @@ class FakeBackend(Backend):
     def mark_releasing(self, space_id, lot_id, user_id, is_officer=False):
         with self._lock:
             lot = self.lots.get((space_id, lot_id))
-            if not lot or lot["status"] != "taken":
+            if not lot or lot["status"] not in ("taken", "releasing") or not lot.get("session_id"):
                 return False
             if not is_officer and lot.get("user_id") != user_id:
                 return False
-            lot["status"] = "releasing"
+            bike_gone = not lot.get("bike_present")
+            if lot["status"] == "releasing" and not bike_gone:
+                return False  # already unlocking; "Unlock again" only re-sends open
             session = self.sessions[lot["session_id"]]
-            session["end_time"] = now_iso()
-            session.pop("is_open", None)
-            return True
+            if "is_open" in session:
+                session["end_time"] = now_iso()
+                session.pop("is_open")
+            if bike_gone:  # bike already gone (e.g. suspected theft): free the lot directly
+                lot["status"] = "free"
+                for field in ("user_id", "session_id", "lock_reminded_at"):
+                    lot.pop(field, None)
+                return "freed"
+            lot["status"] = "releasing"
+            return "releasing"
 
     # Commands
     def publish_open(self, lot_id):
@@ -110,6 +120,8 @@ class FakeBackend(Backend):
         self.published.append((lot_id, {"action": "open", "requestId": request_id, "expires": int(time.time()) + 30}))
         space_id = lot_id.split("#")[0]
         lot = self.lots.get((space_id, lot_id))
+        if lot:
+            lot["lock_closed"] = False  # the lock's feedback wire reports lock_opened
         # Pretend to be the cyclist + IR sensor: after an unlock, the bike leaves a few seconds later.
         if lot and lot["status"] == "releasing" and lot_id not in self._leaving:
             self._leaving.add(lot_id)
@@ -151,16 +163,37 @@ class FakeBackend(Backend):
             elif event_type == "bike_left":
                 lot["bike_present"] = False
                 lot.pop("bike_present_since", None)
-                if lot["status"] == "releasing":
-                    lot["status"] = "free"
-                    lot.pop("user_id", None)
-                    lot.pop("session_id", None)
+                if lot["status"] == "releasing" and lot.get("lock_closed", True) is not False:
+                    self._free(lot)  # unlocked, bike gone, lock closed again: done
+                elif lot["status"] == "releasing":
+                    # Bike taken but the lock left open: tie the account to the lot until it closes.
+                    lot["status"] = "awaiting_lock"
+                    lot["awaiting_lock_since"] = now_iso()
+                    lot.pop("lock_reminded_at", None)
+                    if lot.get("user_id") in self.users:
+                        self.users[lot["user_id"]]["pending_lock_lot_id"] = lot_id
+            elif event_type == "lock_opened":
+                lot["lock_closed"] = False
+            elif event_type == "lock_closed":
+                lot["lock_closed"] = True
+                lot.pop("lock_reminded_at", None)
+                if lot["status"] == "awaiting_lock":
+                    user = self.users.get(lot.get("user_id"), {})
+                    if user.get("pending_lock_lot_id") == lot_id:
+                        user.pop("pending_lock_lot_id")
+                    self._free(lot)
             elif event_type == "tamper":
                 event_id = str(uuid.uuid4())
                 event = {"id": event_id, "lot_id": lot_id, "detected_time": now_iso(), "notified": False}
                 if lot.get("session_id"):
                     event["session_id"] = lot["session_id"]
                 self.tamper_events[event_id] = event
+
+    @staticmethod
+    def _free(lot):
+        lot["status"] = "free"
+        for field in ("user_id", "session_id", "awaiting_lock_since", "lock_reminded_at"):
+            lot.pop(field, None)
 
     def flag_overstays(self, limit_minutes):
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=limit_minutes)).strftime("%Y-%m-%dT%H:%M:%SZ")

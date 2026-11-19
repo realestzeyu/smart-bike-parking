@@ -21,7 +21,8 @@
     </div>
     <p class="mt-1 text-stone">
       Status <strong class="text-ink">{{ lot.status }}</strong> ·
-      bike {{ "detected" if lot.bike_present else "not detected" }}
+      bike {{ "detected" if lot.bike_present else "not detected" }} ·
+      lock {{ "open" if lot.lock_closed == false else "closed" }}
       {% if lot.user_id %} · owner <strong class="text-ink">{{ lot.user_id }}</strong>{% endif %}
     </p>
     <div class="mt-4 flex flex-wrap gap-3">

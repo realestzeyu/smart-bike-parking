@@ -1,7 +1,7 @@
 {% extends "_phone.html" %}
-{# J2-J5. state: free | locked | mine | released | in_use (set in pages/lot.py) #}
+{# J2-J5. state: free | locked | mine | released | awaiting_lock | done | gone | in_use (set in pages/lot.py) #}
 {% set n = lot.id | lot_number %}
-{% set map_at = {"lat": space.lat, "lng": space.lng, "label": "Lot " ~ n, "level": "ok" if state == "free" else "full"} %}
+{% set map_at = {"lat": space.lat, "lng": space.lng, "label": "Lot " ~ n, "level": "ok" if state in ("free", "done", "gone") else "full"} %}
 {% set back_href = "/#" ~ space.id %}
 {% set back_label = "Back to the parking space" %}
 {% block title %}Lot {{ n }} · {{ space.address }}{% endblock %}
@@ -18,7 +18,16 @@
 {% endif %}
 {% endmacro %}
 
-{% if state == "free" %}
+{# Unlocked / lock left open: refresh every 5 s so the page follows bike_left and lock_closed by itself. #}
+<div id="lot-state" class="flex-1 flex flex-col"
+     {% if state in ("released", "awaiting_lock") %}hx-get="/lot/{{ lot_ref }}?step=released{% if sent %}&sent={{ sent | urlencode }}{% endif %}"hx-select="#lot-state" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+{% if state == "free" and blocked %}
+  <p class="mt-6 flex items-center gap-2 text-lg"><span class="dot bg-teal"></span>This lot is free</p>
+  <p class="mt-4 rounded bg-amber-soft text-amber font-semibold text-lg px-4 py-3">Close the lock at {{ blocked.address }}, lot {{ blocked.n }} first.</p>
+  <p class="mt-2 text-stone">You took your bike but left that lock open. Push the metal piece back in, then you can use any lot again.</p>
+  <p class="mt-4"><a href="/lot/{{ blocked.ref }}" class="text-teal font-semibold underline underline-offset-2">Go to that lot</a></p>
+
+{% elif state == "free" %}
   <p class="mt-6 flex items-center gap-2 text-lg"><span class="dot bg-teal"></span>This lot is free</p>
   {% if not lot.bike_present %}
   <p class="mt-4 rounded bg-amber-soft text-amber px-4 py-3">No bike detected yet. Put your bike in the lot first.</p>
@@ -41,10 +50,17 @@
   </div>
 
 {% elif state == "mine" %}
+  {# Real state from the sensors: IR (bike_present) and the lock's feedback wire (lock_closed; missing = closed). #}
+  {% if not lot.bike_present %}
+  <p class="mt-6 rounded bg-amber-soft text-amber font-semibold text-lg px-4 py-3" role="status">Bike not detected</p>
+  {% elif lot.lock_closed == false %}
+  <p class="mt-6 rounded bg-amber-soft text-amber font-semibold text-lg px-4 py-3" role="status">Lock open: push it in</p>
+  {% else %}
   <p class="mt-6 flex items-center gap-2 rounded bg-teal-soft text-teal font-semibold text-lg px-4 py-3" role="status">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
     Your bike is parked and locked
   </p>
+  {% endif %}
   <p class="mt-4 text-lg">Parked since <strong class="font-semibold">{{ session.start_time | sgt_time }}</strong>.</p>
   <p class="mt-1 text-stone">Total time: {{ session.start_time | parked_for }}</p>
   <form method="post" action="/lot/{{ lot_ref }}/unlock" class="mt-auto pt-8">
@@ -62,10 +78,26 @@
     </form>
   </div>
 
+{% elif state == "awaiting_lock" %}
+  <h2 class="mt-6 text-xl font-semibold text-amber">Lock still open</h2>
+  <p class="mt-3 rounded bg-amber-soft text-amber font-semibold text-lg px-4 py-3">You took your bike but the lock is open: please push the metal piece back in.</p>
+  <p class="mt-2 text-stone">You can't use another lot until it's closed.</p>
+
+{% elif state == "done" %}
+  <h2 class="mt-6 text-xl font-semibold text-teal">Lock closed. Thanks!</h2>
+  <p class="mt-3 text-lg">Your parking has ended.</p>
+  <div class="mt-auto pt-8"><a href="/" class="btn-primary w-full">Done</a></div>
+
+{% elif state == "gone" %}
+  <p class="mt-6 rounded bg-amber-soft text-amber font-semibold text-lg px-4 py-3">Your bike was no longer detected at this lot.</p>
+  <p class="mt-3">Your parking has ended. If you didn't take your bike, please contact station staff.</p>
+  <div class="mt-auto pt-8"><a href="/" class="btn-primary w-full">Done</a></div>
+
 {% else %}
   <p class="mt-6 flex items-center gap-2 text-lg"><span class="dot bg-stone"></span>This lot is in use.</p>
   <p class="mt-2 text-stone"><a href="/#{{ space.id }}" class="text-teal underline underline-offset-2">See other free lots</a></p>
 {% endif %}
+</div>
 
 {% if user %}
 <form method="post" action="/logout" class="mt-6 text-stone">

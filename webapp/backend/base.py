@@ -44,7 +44,9 @@ class Backend:
 
     # Lot status changes (agreed-names section 3)
     def claim_lot(self, space_id, lot_id, user_id): ...  # free -> taken + session; False if not free
-    def mark_releasing(self, space_id, lot_id, user_id, is_officer=False): ...  # taken -> releasing; False if not allowed
+    # taken -> releasing (+ close session): returns "releasing". Bike already gone (taken/releasing, no bike):
+    # frees the lot directly, no open command needed: returns "freed". False if not allowed.
+    def mark_releasing(self, space_id, lot_id, user_id, is_officer=False): ...
 
     # Commands to the ESP32
     def publish_open(self, lot_id): ...  # returns requestId

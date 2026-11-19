@@ -240,7 +240,9 @@ def force_unlock(request: Request, lot_ref: str):
     user = require_officer(request)
     keys = parse_lot_ref(lot_ref)
     b = get_backend()
-    if keys and b.mark_releasing(*keys, user["id"], is_officer=True):
-        b.publish_open(keys[1])
+    result = b.mark_releasing(*keys, user["id"], is_officer=True) if keys else False
+    if result:
+        if result == "releasing":  # "freed" = bike already gone, nothing to open
+            b.publish_open(keys[1])
         return RedirectResponse(f"/officer?done={lot_ref}", status_code=303)
     return RedirectResponse(f"/officer?failed={lot_ref}", status_code=303)

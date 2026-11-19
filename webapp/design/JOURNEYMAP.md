@@ -19,9 +19,11 @@
 Scans QR → already logged in (cookie) → Use this lot → same as J2.7.
 
 ## J4. Collect the bike (owner)
-1. Scans the QR → page recognises the owner: "Your bike is parked here since 08:15" + Unlock.
+1. Scans the QR → page recognises the owner: "Your bike is parked here since 08:15" + Unlock. The top line shows the real sensor state: "parked and locked", "Lock open: push it in" (lock wire open), or "Bike not detected" (IR sees no bike).
 2. Taps Unlock → lot releasing, session ended, open sent → "Unlocked. Please take your bike and push the cable back in." with "Open signal sent … at …", a Done button (→ map) and "Lock didn't open? Unlock again".
-3. Takes the bike → IR bike_left → handle_event sets the lot free. (No page update needed.)
+3. The page refreshes every 5 s. Pushes the cable back in and takes the bike (lock_closed, bike_left) → lot free → page shows "Lock closed. Thanks!" + Done.
+4. Takes the bike but leaves the lock open (bike_left with the lock open) → lot awaiting_lock, account tied to the lot → page switches to "Lock still open: please push the metal piece back in". Trying to use another lot shows "Close the lock at <address>, lot N first". Pushes it in (lock_closed) → lot free → "Lock closed. Thanks!".
+5. Bike already gone when they tap Unlock (left without an unlock, suspected theft) → lot freed directly, no open command → "Your bike was no longer detected at this lot". Officer Force unlock does the same.
 
 ## J4a. My parking (tab bar, logged in)
 1. Taps My parking (not logged in → Log in, then back here).
@@ -43,7 +45,7 @@ Sent by the Lambdas. The web app only stores telegram_chat_id.
 3. Cyclist lost their phone → officer finds the lot in the table → Force unlock → confirms on the page (no browser popup) → lot releasing, session ended, open sent.
 
 ## J8. Demo helper (fake backend only, not shown to users)
-/dev: buttons per lot for bike_arrived, bike_left, tamper, and "run overstay check". Stands in for the ESP32 and Lambdas until AWS is live. Also automatic in fake mode: about 8 s after an Unlock it reports bike_left by itself (no IR sensor), so the lot frees up.
+/dev: buttons per lot for bike_arrived, bike_left, tamper, lock_opened, lock_closed, and "run overstay check". Every open command also makes the fake lock report open (like the real feedback wire), so "lock_closed" = the cyclist pushing the metal piece in. Stands in for the ESP32 and Lambdas until AWS is live. Also automatic in fake mode: about 8 s after an Unlock it reports bike_left by itself (no IR sensor), so the lot frees up.
 
 ## Not in this build
 - Unlock confirmation (KIV): the app assumes every open command worked.

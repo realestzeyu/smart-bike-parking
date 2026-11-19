@@ -12,7 +12,8 @@ from fastapi.responses import RedirectResponse
 
 from auth import current_user
 from backend import get_backend
-from backend.base import parse_lot_ref
+from backend.base import lot_number, parse_lot_ref
+from backend.base import lot_ref as lot_ref_of
 from templating import SGT, templates
 
 router = APIRouter()
@@ -44,9 +45,16 @@ def lot_page(request: Request, lot_ref: str, step: str = "", sent: str = ""):
     mine = bool(user) and lot.get("user_id") == user["id"]
 
     if lot["status"] == "free":
-        state = "free"
+        if user and step == "released":
+            state = "done"  # J4.3: bike gone and lock closed again, parking finished
+        elif user and step == "gone":
+            state = "gone"  # Unlock found the bike already gone: lot freed directly
+        else:
+            state = "free"
     elif not mine:
         state = "in_use"
+    elif lot["status"] == "awaiting_lock":
+        state = "awaiting_lock"  # J4.4: bike taken, lock left open; account tied until it closes
     elif lot["status"] == "releasing":
         state = "released"  # J4.2: unlocked, waiting for the bike to leave
     elif step == "locked":
@@ -54,10 +62,18 @@ def lot_page(request: Request, lot_ref: str, step: str = "", sent: str = ""):
     else:
         state = "mine"  # J4.1: owner came back
 
+    # Account tied to another lot whose lock was left open: no new parking until it's closed.
+    blocked = None
+    if state == "free" and user and user.get("pending_lock_lot_id"):
+        pending = user["pending_lock_lot_id"]
+        blocked = {"address": (b.get_space(pending.split("#")[0]) or {}).get("address", ""),
+                   "n": lot_number(pending), "ref": lot_ref_of(pending)}
+
     session = b.get_session(lot["session_id"]) if mine and lot.get("session_id") else None
     return templates.TemplateResponse(request, "lot.html", {
         "lot": lot, "lot_ref": lot_ref, "space": b.get_space(space_id), "state": state,
         "user": user, "session": session, "sent": sent if state in ("locked", "released") else "",
+        "blocked": blocked,
     })
 
 
@@ -67,6 +83,8 @@ def use_lot(request: Request, lot_ref: str):
     user = current_user(request)
     if not user:
         return RedirectResponse(f"/login?next=/lot/{lot_ref}", status_code=303)
+    if user.get("pending_lock_lot_id"):
+        return back_to(lot_ref)  # page shows "Close the lock at ... first"
     b = get_backend()
     if not b.claim_lot(space_id, lot_id, user["id"]):
         return back_to(lot_ref)  # someone was faster: page now shows "in use"
@@ -82,7 +100,7 @@ def open_again(request: Request, lot_ref: str):
     sent = bool(user) and lot.get("user_id") == user["id"] and lot["status"] in ("taken", "releasing")
     if sent:
         get_backend().publish_open(lot_id)
-    return back_to(lot_ref, "locked" if lot["status"] == "taken" else "", sent=sent)
+    return back_to(lot_ref, "locked" if lot["status"] == "taken" else "released", sent=sent)
 
 
 @router.post("/lot/{lot_ref}/unlock")
@@ -90,7 +108,10 @@ def unlock(request: Request, lot_ref: str):
     space_id, lot_id, _ = load(lot_ref)
     user = current_user(request)
     b = get_backend()
-    if user and b.mark_releasing(space_id, lot_id, user["id"]):
+    result = b.mark_releasing(space_id, lot_id, user["id"]) if user else False
+    if result == "releasing":
         b.publish_open(lot_id)
-        return back_to(lot_ref, sent=True)
+        return back_to(lot_ref, "released", sent=True)
+    if result == "freed":
+        return back_to(lot_ref, "gone")  # bike already gone: no open command needed
     return back_to(lot_ref)

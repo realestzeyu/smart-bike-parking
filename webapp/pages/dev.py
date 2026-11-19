@@ -1,6 +1,6 @@
 """J8: /dev demo helper. Only registered when BACKEND=fake (see main.py).
 
-Stands in for the ESP32 (bike_arrived / bike_left / tamper) and the check_overstay Lambda.
+Stands in for the ESP32 (bike_arrived / bike_left / tamper / lock_opened / lock_closed) and the check_overstay Lambda.
 """
 
 from fastapi import APIRouter, Form, Request
@@ -13,7 +13,7 @@ from templating import templates
 
 router = APIRouter()
 
-EVENTS = ("bike_arrived", "bike_left", "tamper")
+EVENTS = ("bike_arrived", "bike_left", "tamper", "lock_opened", "lock_closed")
 
 
 @router.get("/dev")
