@@ -15,9 +15,11 @@ ESP32 (sensors + solenoid lock) ⇄ AWS IoT Core (MQTT) → Lambdas → DynamoDB
 | `firmware/` | ESP32 code |
 | `certs/` | Device certificates (gitignored) |
 | `docs/` | `handoff.md`, `agreed-names-and-formats.md` (table, field and topic names) |
+| `bin/` | `aws`, `terraform`: run the AWS CLI / Terraform through Docker (nothing to install) |
 
 ## Run the web app
 Quick start: `bash webapp/run.sh` (Git Bash on Windows), then open http://127.0.0.1:8000.
+Or in Docker: `docker compose up --build`. Docker + testing on your own AWS account (no hardware needed): **[`docs/test-on-aws.md`](docs/test-on-aws.md)**.
 Setup, test accounts and a demo walk-through: **[`webapp/README.md`](webapp/README.md)**.
 
 See `CLAUDE.md` for project rules and `webapp/CLAUDE.md` for web app details.

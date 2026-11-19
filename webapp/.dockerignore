@@ -1,0 +1,11 @@
+# Never copy secrets or local junk into the image.
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+design/
+run.sh
+Dockerfile
+.dockerignore

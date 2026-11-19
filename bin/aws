@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# AWS CLI v2 in Docker: nothing to install. Use it exactly like `aws`.
+# Put bin/ on your PATH once per terminal (from the repo root):  export PATH="$PWD/bin:$PATH"
+# Uses your ~/.aws (profiles sbp-admin / sbp-webapp). The repo is mounted at the same path, so
+# relative paths and scripts like infra/test_data.sh work as if aws were installed.
+set -e
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$HOME/.aws"
+TTY=-i; [ -t 0 ] && [ -t 1 ] && TTY=-it   # interactive only in a real terminal (aws configure)
+exec docker run --rm $TTY --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v "$HOME/.aws:/aws" -e AWS_CONFIG_FILE=/aws/config -e AWS_SHARED_CREDENTIALS_FILE=/aws/credentials \
+  -e AWS_PROFILE -e AWS_REGION -e AWS_DEFAULT_REGION -e AWS_PAGER= \
+  -v "$REPO:$REPO" -w "$PWD" \
+  amazon/aws-cli:2.22.0 "$@"

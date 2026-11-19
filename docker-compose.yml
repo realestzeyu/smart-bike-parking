@@ -1,0 +1,14 @@
+# Web app in Docker. Guide: docs/test-on-aws.md
+#   docker compose up --build      -> http://localhost:8000  (phone on the same Wi-Fi: http://<laptop-ip>:8000)
+# BACKEND=fake (default) needs nothing. BACKEND=aws reads webapp/.env and your ~/.aws (read-only).
+# Run `mkdir -p ~/.aws` once before the first start.
+services:
+  webapp:
+    build: ./webapp
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: webapp/.env
+        required: false
+    volumes:
+      - ${HOME}/.aws:/home/app/.aws:ro

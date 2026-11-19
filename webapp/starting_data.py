@@ -71,6 +71,17 @@ def simulated_rows(now=None):
     return spaces, lots, sessions
 
 
+def simulated_tamper(lots, now=None):
+    """One tamper event on a simulated bike that's still parked (space4), 2 h 20 min ago, alert sent.
+    Fixed id, so re-loading never duplicates it. Loaded into DynamoDB (fake mode has its own history)."""
+    now = now or datetime.now(timezone.utc)
+    taken = next((l for l in lots if l["status"] == "taken" and l["id"].startswith("space4#")), None)
+    if not taken:
+        return []
+    return [{"id": str(uuid.uuid5(uuid.NAMESPACE_URL, "sbp-demo/tamper/1")), "lot_id": taken["id"],
+             "session_id": taken["session_id"], "detected_time": _iso(now - timedelta(minutes=140)), "notified": True}]
+
+
 # ---- Fake mode only: the last 30 days of history, so the officer charts (24 h / 7 days / month) aren't empty ----
 # Not loaded into DynamoDB (times are relative to "now" and would go stale; real use fills AWS).
 # Commuter shape in Singapore time: parkings started per hour, and how long they last (minutes).

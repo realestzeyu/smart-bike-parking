@@ -34,8 +34,9 @@ webapp/
   config.py          reads .env (python-dotenv)
   auth.py            session login helpers: current_user(), require_user(), require_officer(); passwords checked by the backend
   telegram_link.py   one-time code + getUpdates lookup
-  starting_data.py   space1 (real lot) + 3 simulated stations (20 lots each) + officer + demo user
+  starting_data.py   space1 (real lot) + 3 simulated stations (20 lots each) + officer + demo user + 1 tamper on a parked simulated bike (aws only)
   load_starting_data.py  loads starting_data.py into DynamoDB + Cognito if missing; never overwrites
+  reset_data.py      demo-day reset (aws only, asks first): empties spaces/lots/sessions/tamper rows, reloads starting data; keeps logins. `bash run.sh --reset`
   backend/
     __init__.py      get_backend(): picks fake or aws from BACKEND
     base.py          the interface (method names below)
@@ -80,6 +81,7 @@ pip install -r requirements.txt
 copy .env.example .env  # BACKEND=fake needs nothing else
 uvicorn main:app --host 0.0.0.0 --port 8000   # restart after changes (--reload is unreliable on Windows)
 ```
+Or in Docker (from the repo root): `docker compose up --build`. Full guide incl. AWS mode: `../docs/test-on-aws.md`.
 
 ## Don'ts
 - Don't commit `.env`.

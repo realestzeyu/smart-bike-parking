@@ -15,7 +15,7 @@ import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
-from starting_data import DEMO_USER, LOTS, OFFICER, SPACES, simulated_rows
+from starting_data import DEMO_USER, LOTS, OFFICER, SPACES, simulated_rows, simulated_tamper
 
 load_dotenv()
 session = boto3.Session(
@@ -64,6 +64,8 @@ def main():
         create("lots", lot, "space_id")
     for session in sim_sessions:
         create("sessions", session, "id")
+    for event in simulated_tamper(sim_lots):
+        create("tamper-events", event, "id")
     create("users", DEMO_USER, "id")
 
     create_officer()

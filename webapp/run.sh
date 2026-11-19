@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Start the web app. First run sets everything up; later runs just start the server.
 # Usage (from anywhere):  bash webapp/run.sh        Windows: run it in Git Bash.
+# Demo day:  bash webapp/run.sh --reset   wipes the demo data in AWS and reloads it fresh first (asks; keeps logins).
 set -e
 cd "$(dirname "$0")"
 
@@ -39,7 +40,12 @@ if [ ! -f .env ]; then
   echo "Created .env from .env.example (BACKEND=fake: no AWS needed)."
 fi
 
-# 5. Start. Show the addresses to open.
+# 5. Optional demo-day reset (BACKEND=aws only). Stops here if you don't type yes.
+if [ "${1:-}" = "--reset" ]; then
+  "$VPY" reset_data.py
+fi
+
+# 6. Start. Show the addresses to open.
 IP=$("$VPY" -c "import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(('8.8.8.8', 80)); print(s.getsockname()[0])" 2>/dev/null || echo "<laptop-ip>")
 echo ""
 echo "  Laptop: http://127.0.0.1:8000"
