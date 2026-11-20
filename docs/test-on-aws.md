@@ -47,7 +47,7 @@ They use your `~/.aws` profiles and write files (state, certificates) into the r
 cd infra
 cp terraform.tfvars.example terraform.tfvars
 ```
-In `terraform.tfvars`, set `budget_email` to your email (cost alerts). Leave `telegram_bot_token` empty for now.
+In `terraform.tfvars`, set `budget_email` to your email (cost alerts). Leave `telegram_bot_token` empty for now (step 9 sets it).
 ```bash
 terraform init
 terraform validate
@@ -157,7 +157,37 @@ Set `overstay_limit_minutes` in `infra/terraform.tfvars` (and `terraform apply`)
 
 ## 9. Telegram alerts
 
-(Added in the next step.)
+One-way alerts to cyclists: tamper, bike gone without an unlock, overstay, and lock left open. The web app links each cyclist's Telegram chat, and the Lambdas send the messages.
+
+**1. Create the bot.** In Telegram, open **@BotFather** (blue tick) → `/newbot` → give it a name (e.g. `Smart Bike Parking`) → give it a username ending in `bot` (e.g. `sbp_alerts_bot`). BotFather replies with a **token**. Keep it private: never paste it into chat or commit it. Don't set a webhook, because that breaks Connect Telegram.
+
+**2. Give it to the web app.** In `webapp/.env`:
+| Setting | Value |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | the token |
+| `TELEGRAM_BOT_USERNAME` | the username, without `@` |
+
+**3. Give it to the Lambdas.** In `infra/terraform.tfvars`, set `telegram_bot_token = "<the token>"`. Then from `infra/`:
+```bash
+terraform plan -out=tfplan      # expect "0 to add, 2 to change, 0 to destroy" (the two Lambdas)
+terraform apply tfplan
+```
+
+**4. Restart the web app:** `Ctrl+C`, then `docker compose up` or `bash webapp/run.sh`.
+
+**5. Connect Telegram.** Log in as your cyclist → Profile → **Connect Telegram** → **Open Telegram**. Use that button; it sends `/start <code>` for you. Then come back and press **Done**. Profile should show **Telegram alerts: On**.
+
+**6. Test.** With `pub` from step 8 set up, park on lot 1 (flow A), then:
+- `pub tamper` → "⚠️ Someone may be tampering with your bike at …"
+- `pub bike_left` → "🚨 Your bike at … left the rack without an unlock …". Then tap **Unlock** to free the lot.
+
+`logs` shows `"notified": true` for each one, and the officer console's tamper log shows **Telegram alert: Sent**.
+
+| Problem | Fix |
+|---|---|
+| "Telegram alerts aren't set up on this server yet" | Put both values in `webapp/.env`, then restart |
+| "We couldn't find your Start message yet" | The bot got `/start` without the code (the bot was opened from search, or `/start` was typed). Tap **Open Telegram** on the page, then **Done**. Or send `/start <code>` yourself: the code is the part after `start=` in the button's link |
+| `"notified": false` in `logs` | The cyclist hasn't connected Telegram, or the Lambdas have no token (step 3) |
 
 ## 10. Tear down
 

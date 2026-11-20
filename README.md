@@ -19,7 +19,7 @@ ESP32 (sensors + solenoid lock) ⇄ AWS IoT Core (MQTT) → Lambdas → DynamoDB
 
 ## Starting fresh
 - **No AWS (fake mode):** `bash webapp/run.sh` (Git Bash on Windows), then open http://127.0.0.1:8000. Needs only Python 3.10+.
-- **Your own AWS:** `run.sh` alone isn't enough. Do [`docs/test-on-aws.md`](docs/test-on-aws.md) steps 2–6 once (deploy, `.env`, starting data). After that, `bash webapp/run.sh`.
+- **Your own AWS:** `run.sh` alone isn't enough. Do [`docs/test-on-aws.md`](docs/test-on-aws.md) steps 2–6 once (deploy, `.env`, starting data). Optional: step 9 for Telegram alerts. After that, `bash webapp/run.sh`.
 - **Demo day (already deployed):** [`webapp/README.md` → Demo day](webapp/README.md#demo-day-aws-mode).
 
 Details and test accounts: [`webapp/README.md`](webapp/README.md). Project rules: `CLAUDE.md`, `webapp/CLAUDE.md`.

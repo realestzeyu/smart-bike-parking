@@ -83,7 +83,7 @@ The 3 extra stations (Exit A, Exit B, SUTD Campus Centre, 20 lots each) are simu
 
 ## Switch to AWS
 1. Deploy the infra: see [`../infra/README.md`](../infra/README.md).
-2. Fill `.env` from the Terraform outputs: `BACKEND=aws`, `SESSION_SECRET` (any long random string), `AWS_PROFILE=sbp-webapp`, `IOT_DATA_ENDPOINT`, `TABLE_PREFIX`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, and the Telegram bot values if you have them.
+2. Fill `.env` from the Terraform outputs: `BACKEND=aws`, `SESSION_SECRET` (any long random string), `AWS_PROFILE=sbp-webapp`, `IOT_DATA_ENDPOINT`, `TABLE_PREFIX`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`. Telegram values: see [`../docs/test-on-aws.md`](../docs/test-on-aws.md) step 9.
 3. Load the starting rows (stations, lots, simulated bikes, 1 tamper, officer account): `python load_starting_data.py`. Safe to re-run: it never overwrites. To start over with fresh data: `bash run.sh --reset` (see Demo day).
 4. Start the server as above. `/dev` doesn't exist in AWS mode: the real ESP32 sends the events (or `pub` from a terminal, see Demo day).
 
