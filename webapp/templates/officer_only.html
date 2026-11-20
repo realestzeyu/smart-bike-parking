@@ -1,0 +1,15 @@
+{% extends "_phone.html" %}
+{% set back_href = "/" %}
+{% set back_label = "Back to the map" %}
+{% block title %}Officers only · Bicycle Parking{% endblock %}
+{% block sheet %}
+<h1 class="mt-5 text-2xl font-semibold">This page is for officers</h1>
+<p class="mt-2 text-lg">You're logged in as {{ user.name }}, a cyclist account.</p>
+<div class="mt-auto pt-8 space-y-3">
+  <form method="post" action="/logout">
+    <input type="hidden" name="next" value="/login?next=/officer">
+    <button class="btn-primary w-full">Log in as an officer</button>
+  </form>
+  <a href="/" class="btn-secondary w-full">Back to the map</a>
+</div>
+{% endblock %}

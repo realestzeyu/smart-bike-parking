@@ -1,0 +1,30 @@
+{% extends "_phone.html" %}
+{% set back_href = next %}
+{% set back_label = "Back" %}
+{% block title %}Connect Telegram · Bicycle Parking{% endblock %}
+{% block sheet %}
+<h1 class="mt-5 text-2xl font-semibold">Get alerts on Telegram</h1>
+<p class="mt-2 text-lg">We'll message you if someone tampers with your bike, or if it's been parked too long.</p>
+
+{% if error %}<p class="mt-5 rounded bg-alert-soft text-alert px-4 py-3" role="alert">{{ error }}</p>{% endif %}
+
+{% if link %}
+  <ol class="mt-6 space-y-2 text-stone">
+    <li>Open Telegram and tap <strong class="text-ink">Start</strong>.</li>
+    <li>Come back here and tap <strong class="text-ink">Done</strong>.</li>
+  </ol>
+  <div class="mt-auto pt-8 space-y-3">
+    <a href="{{ link }}" target="_blank" rel="noopener" class="btn-primary w-full">Open Telegram</a>
+    <form method="post" action="/connect-telegram">
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="btn-secondary w-full">Done</button>
+    </form>
+    <a href="{{ next }}" class="block py-2 text-teal font-semibold underline underline-offset-2">Skip for now</a>
+  </div>
+{% else %}
+  <p class="mt-5 rounded bg-amber-soft text-amber px-4 py-3">Telegram alerts aren't set up on this server yet.</p>
+  <div class="mt-auto pt-8">
+    <a href="{{ next }}" class="btn-primary w-full">Continue</a>
+  </div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,234 @@
+/* Small global rules. Tokens live in templates/base.html (tailwind.config) and design/DESIGN.md. */
+
+:focus-visible {
+  outline: 2px solid #0F766E;
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ---- Bottom sheets (phone) ---- */
+.sheet {
+  border-top: 1px solid #E4E2DC;
+  border-radius: 10px 10px 0 0;
+}
+.handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: #D6D3CB;
+  margin: 0 auto;
+}
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+/* ---- Buttons and form fields ---- */
+.btn-primary, .btn-secondary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border-radius: 999px;
+  padding: 15px 24px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.btn-primary { background: #0F766E; color: #fff; }
+.btn-primary:hover { background: #0C625B; }
+.btn-secondary { background: #fff; color: #0F766E; border: 2px solid #0F766E; }
+.btn-secondary:hover { background: #E3F1EF; }
+.btn-danger { background: #B91C1C; color: #fff; border-radius: 999px; padding: 8px 16px; font-weight: 600; }
+.btn-small { border-radius: 999px; padding: 6px 14px; font-weight: 600; border: 1.5px solid #0F766E; color: #0F766E; background: #fff; }
+.btn-small:hover { background: #E3F1EF; }
+
+.field { display: block; margin-top: 16px; }
+.field span { display: block; font-weight: 500; margin-bottom: 6px; }
+.field input {
+  width: 100%;
+  border: 1.5px solid #D6D3CB;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 17px;
+  background: #fff;
+}
+.field input:focus { outline: none; border-color: #0F766E; box-shadow: 0 0 0 3px #E3F1EF; }
+
+/* Floating controls over the map are the only things with a shadow. */
+.map-control {
+  box-shadow: 0 1px 4px rgba(31, 31, 28, 0.15);
+}
+
+/* ---- Map pins ---- */
+.pin {
+  display: inline-block;
+  transform: translate(-50%, -50%);
+  white-space: nowrap;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 3px solid #fff;
+  color: #fff;
+  font: 600 17px/1.2 "IBM Plex Sans", system-ui, sans-serif;
+  cursor: pointer;
+}
+.pin-ok { background: #0F766E; }
+.pin-few { background: #B45309; }
+.pin-full { background: #6B6A63; }
+.pin-selected { border-color: #CDE6E2; box-shadow: 0 0 0 4px #E3F1EF; }
+
+.you-dot {
+  display: block;
+  width: 22px;
+  height: 22px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: #1D4ED8;
+  border: 4px solid #fff;
+  box-shadow: 0 0 0 1px rgba(31, 31, 28, 0.15);
+}
+
+/* ---- Map page states: overview vs station sheet ---- */
+#back, #detail { display: none; }
+#detail { top: 44vh; }
+body.detail-open #back,
+body.detail-open #detail { display: block; }
+body.detail-open #overview,
+body.detail-open .tabbar,
+body.detail-open #locate { display: none; }
+
+/* ---- Officer console ---- */
+.card { background: #fff; border: 1px solid #E4E2DC; border-radius: 10px; }
+.badge { display: inline-block; border-radius: 999px; padding: 3px 12px; font-size: 14px; font-weight: 500; white-space: nowrap; }
+/* Station pin: ring split by lot state (background set in officer.js), white centre with used/total. */
+.ring-pin {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  box-shadow: 0 0 0 2px #fff, 0 1px 4px rgba(31, 31, 28, 0.25);
+}
+.ring-pin > span {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  background: #fff;
+  color: #1F1F1C;
+  font: 600 13px/1 "IBM Plex Sans", system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+/* Utilisation KPI: one segmented bar (2px gaps between parts); hover/focus shows the breakdown. */
+.seg { position: relative; outline: none; }
+.seg-bar { display: flex; gap: 2px; height: 12px; border-radius: 999px; overflow: hidden; cursor: default; }
+.seg-tip {
+  display: none;
+  position: absolute;
+  z-index: 1100;
+  top: calc(100% + 8px);
+  left: 0;
+  padding: 10px 12px;
+  border: 1px solid #E4E2DC;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(31, 31, 28, 0.15);
+}
+.seg:hover .seg-tip, .seg:focus-visible .seg-tip { display: block; }
+.seg:focus-visible .seg-bar { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0F766E; }
+/* Utilisation card: "Total | By space" pill (two radios; CSS shows the chosen panel, no JS). */
+.pill { display: inline-flex; padding: 2px; border: 1px solid #E4E2DC; border-radius: 999px; background: #F6F5F1; font-size: 13px; }
+.pill label { padding: 3px 12px; border-radius: 999px; color: #6B6A63; cursor: pointer; white-space: nowrap; }
+.pill label:hover { color: #1F1F1C; }
+.pill input:checked + label { background: #0F766E; color: #fff; font-weight: 600; }
+.pill input:focus-visible + label { box-shadow: 0 0 0 2px #fff, 0 0 0 4px #0F766E; }
+#kpi-util-card:has(#util-by:checked) .util-total,
+#kpi-util-card:not(:has(#util-by:checked)) .util-by { display: none; }
+/* "?" help: hover or keyboard focus shows data-tip. */
+.help {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 4px;
+  vertical-align: 2px;
+  border-radius: 999px;
+  border: 1px solid #C9C6BE;
+  background: #fff;
+  color: #6B6A63;
+  font: 600 12px/1 "IBM Plex Sans", system-ui, sans-serif;
+  cursor: help;
+}
+.help:hover, .help:focus-visible { border-color: #6B6A63; color: #1F1F1C; }
+.help:hover::after, .help:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  z-index: 1100; /* above the Leaflet map */
+  bottom: calc(100% + 8px); /* opens above the "?", so it never covers the block's numbers */
+  left: 50%;
+  transform: translateX(-50%);
+  width: 280px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #1F1F1C;
+  color: #fff;
+  font: 400 14px/1.45 "IBM Plex Sans", system-ui, sans-serif;
+  text-align: left;
+  white-space: normal;
+}
+.help-end:hover::after, .help-end:focus-visible::after { left: auto; right: -8px; transform: none; }
+.ring-tip { font: 400 14px/1.4 "IBM Plex Sans", system-ui, sans-serif; color: #1F1F1C; min-width: 190px; }
+.ring-tip ul { margin: 6px 0; }
+.ring-tip li { display: flex; align-items: center; gap: 8px; }
+.ring-tip li b { margin-left: auto; font-weight: 600; }
+.ring-tip p { color: #6B6A63; }
+
+.leaflet-container { font-family: "IBM Plex Sans", system-ui, sans-serif; background: #EEF0EA; }
+/* Mute the OpenStreetMap colours toward the mockup's grey-green ground. */
+.leaflet-tile-pane { filter: grayscale(0.85) sepia(0.12) brightness(1.06) contrast(0.88); }
+.leaflet-control-attribution { font-size: 10px; }
+
+/* Lot grid boxes on the station sheet (free ones are links to the lot page). */
+.lot-box {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-width: 2px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Shared hover tooltip for the last-24-h charts (officer.js). */
+.chart-tip {
+  position: fixed;
+  z-index: 1100;
+  pointer-events: none;
+  padding: 6px 10px;
+  border: 1px solid #E4E2DC;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(31, 31, 28, 0.15);
+  font: 500 14px/1.3 "IBM Plex Sans", system-ui, sans-serif;
+  color: #1F1F1C;
+  white-space: nowrap;
+}
+
+/* Officer console: jump links from the KPI cards scroll smoothly and stop just above the card. */
+html { scroll-behavior: smooth; }
+#to-clear, #abandoned-bikes, #unregistered-bikes, #tamper-log { scroll-margin-top: 16px; }
+.sticky-head th { position: sticky; top: 0; z-index: 1; background: #fff; } /* column names stay visible in the scroll boxes */
+/* Tamper log: rows older than 7 days only while "Show older alerts" is ticked; the tick box hides when there are none. */
+#tamper-log:not(:has(#tamper-all:checked)) tr.old,
+#tamper-log:not(:has(#tamper-all:checked)) table.only-old,
+#tamper-log:not(:has(tr.old)) .older-toggle { display: none; }

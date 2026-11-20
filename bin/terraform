@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Terraform in Docker: nothing to install. Use it exactly like `terraform` (from infra/).
+# Put bin/ on your PATH once per terminal (from the repo root):  export PATH="$PWD/bin:$PATH"
+# Uses your ~/.aws for the sbp-admin profile. State, plan and certs are written into the repo
+# (all gitignored), owned by you.
+set -e
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+mkdir -p "$HOME/.aws"
+TTY=-i; [ -t 0 ] && [ -t 1 ] && TTY=-it   # apply/destroy ask "yes" in a real terminal
+exec docker run --rm $TTY --user "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v "$HOME/.aws:/aws" -e AWS_CONFIG_FILE=/aws/config -e AWS_SHARED_CREDENTIALS_FILE=/aws/credentials \
+  -v "$REPO:$REPO" -w "$PWD" \
+  hashicorp/terraform:1.9.8 "$@"

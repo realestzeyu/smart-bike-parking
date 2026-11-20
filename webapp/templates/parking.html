@@ -1,0 +1,74 @@
+{% extends "_phone.html" %}
+{# My parking: current bike(s) + recent parkings (pages/parking.py). Refreshes itself every 5 s. #}
+{% set back_href = "/" %}
+{% set back_label = "Back to the map" %}
+{% block title %}My parking · Bicycle Parking{% endblock %}
+{% block sheet %}
+<div id="parking" class="pb-20" hx-get="/my-parking" hx-select="#parking" hx-trigger="every 5s" hx-swap="outerHTML">
+  <h1 class="mt-5 text-2xl font-semibold">My Parking</h1>
+
+  <h2 class="mt-6 flex items-center gap-2 text-sm font-semibold tracking-wide uppercase text-teal">
+    <span class="dot bg-teal"></span>Parked now
+  </h2>
+  {% for p in current %}
+  {% set status = p.lot.status %}
+  {% if status == "awaiting_lock" %}
+  <section class="card mt-3 p-5 border-2 border-amber bg-amber-soft">
+    <p class="text-stone">{{ p.address }}</p>
+    <h2 class="mt-1 text-xl font-semibold">Lot {{ p.n }}</h2>
+    <p class="mt-3 text-lg text-amber font-semibold">The lock is still open</p>
+    <p class="mt-1">You took your bike but left the lock open. Please push the metal piece back in so the next person can use this lot. You can't use another lot until it's closed.</p>
+  </section>
+  {% else %}
+  <a href="/lot/{{ p.ref }}" class="card mt-3 p-5 block border-2 border-teal hover:bg-teal-soft">
+    <p class="text-stone">{{ p.address }}</p>
+    <div class="mt-1 flex items-center justify-between gap-3">
+      <h2 class="text-xl font-semibold">Lot {{ p.n }}</h2>
+      {% if status == "releasing" %}
+      <span class="badge bg-teal-soft text-teal">Unlocked</span>
+      {% elif p.lot.lock_closed == false %}
+      <span class="badge bg-amber-soft text-amber">Lock open</span>
+      {% else %}
+      <span class="badge bg-teal-soft text-teal">Locked</span>
+      {% endif %}
+    </div>
+    {% if p.start_time %}
+    <p class="mt-3 text-lg">Parked since <strong class="font-semibold">{{ p.start_time | sgt_datetime }}</strong></p>
+    <p class="mt-1 text-stone">{{ p.start_time | parked_for }}</p>
+    {% endif %}
+    {% if status == "releasing" %}
+    <p class="mt-3">Take your bike and push the cable back in.</p>
+    {% elif p.overstay_notified_at %}
+    <p class="mt-3 text-amber">Parked a long time. Please collect your bike.</p>
+    {% endif %}
+    <p class="mt-4 text-teal font-semibold">{{ "Open lot page" if status == "releasing" else "Open lot page to unlock" }} →</p>
+  </a>
+  {% endif %}
+  {% else %}
+  <section class="card mt-3 p-5">
+    <p class="text-lg">No bike parked right now.</p>
+    <p class="mt-1 text-stone">Scan the QR code.</p>
+    <a href="/" class="btn-primary w-full mt-5">Find a lot</a>
+  </section>
+  {% endfor %}
+
+  <div class="mt-8 border-t border-stone-line"></div>
+  <h2 class="mt-6 text-sm font-semibold tracking-wide uppercase text-stone">Past parkings</h2>
+  {% if history %}
+  <ul class="mt-2 border-t border-stone-line">
+    {% for p in history %}
+    <li class="flex items-center justify-between gap-4 py-3 border-b border-stone-line">
+      <div class="min-w-0">
+        <p class="truncate text-stone">{{ p.address }} · Lot {{ p.n }}</p>
+        <p class="text-sm text-stone">{{ p.start_time | sgt_datetime }}</p>
+      </div>
+      <span class="shrink-0 font-mono text-stone">{{ p.start_time | parked_for(p.end_time) }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="mt-2 text-stone">None yet.</p>
+  {% endif %}
+</div>
+{% set active = "parking" %}{% include "_tabbar.html" %}
+{% endblock %}

@@ -15,15 +15,11 @@ ESP32 (sensors + solenoid lock) ⇄ AWS IoT Core (MQTT) → Lambdas → DynamoDB
 | `firmware/` | ESP32 code |
 | `certs/` | Device certificates (gitignored) |
 | `docs/` | `handoff.md`, `agreed-names-and-formats.md` (table, field and topic names) |
+| `bin/` | `aws`, `terraform`: run the AWS CLI / Terraform through Docker (nothing to install) |
 
-## Run the web app
-Not built yet: `webapp/main.py` is still an old NiceGUI template, to be replaced by the FastAPI app. Once built:
-```
-cd webapp
-uv venv .venv && source .venv/bin/activate
-uv pip install -r requirements.txt
-cp .env.example .env     # BACKEND=fake needs only SESSION_SECRET
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload   # http://localhost:8000
-```
+## Starting fresh
+- **No AWS (fake mode):** `bash webapp/run.sh` (Git Bash on Windows), then open http://127.0.0.1:8000. Needs only Python 3.10+.
+- **Your own AWS:** `run.sh` alone isn't enough. Do [`docs/test-on-aws.md`](docs/test-on-aws.md) steps 2–6 once (deploy, `.env`, starting data). Optional: step 9 for Telegram alerts. After that, `bash webapp/run.sh`.
+- **Demo day (already deployed):** [`webapp/README.md` → Demo day](webapp/README.md#demo-day-aws-mode).
 
-See `CLAUDE.md` for project rules and `webapp/CLAUDE.md` for web app details.
+Details and test accounts: [`webapp/README.md`](webapp/README.md). Project rules: `CLAUDE.md`, `webapp/CLAUDE.md`.

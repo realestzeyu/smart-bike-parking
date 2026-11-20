@@ -118,7 +118,7 @@ Key: `id` (S). Few items: the web app Scans.
 |---|---|---|---|
 | `id` | S | `space1` | starting-data script |
 | `address` | S | location shown to cyclists, e.g. `Bedok MRT Exit A, 1 Bedok Rd` | starting-data script |
-| `lat` | N | latitude, for the map pin and "Get directions" | starting-data script |
+| `lat` | N | latitude, for the map pin and distance | starting-data script |
 | `lng` | N | longitude | starting-data script |
 
 ### `sbp-lots`: one item per lot
@@ -154,7 +154,7 @@ Lambdas **read** `telegram_chat_id` and **set / remove** `pending_lock_lot_id` (
 ### Login (Cognito)
 User pool `sbp-users` (Terraform, `infra/cognito.tf`) holds **usernames, passwords and the email used for password resets**. Cognito username = `user.id` (lowercase, case-insensitive). Public app client (no secret), flow `USER_PASSWORD_AUTH`.
 
-The web app keeps its **own** `/signup`, `/login` and `/forgot-password` pages and calls Cognito server-side with boto3 (`cognito-idp`). No Cognito hosted login page (its callback must be HTTPS except on `localhost`; demo phones use `http://<laptop-ip>:8000`).
+The web app keeps its **own** `/signup` and `/login` pages (no `/forgot-password` page in the PoC) and calls Cognito server-side with boto3 (`cognito-idp`). No Cognito hosted login page (its callback must be HTTPS except on `localhost`; demo phones use `http://<laptop-ip>:8000`).
 
 **Role-based access:** Cognito answers *who* the user is; `sbp-users.role` answers *what they may do*. `cyclist` = self sign-up, cyclist pages. `officer` = government staff, created only by the starting-data script, officer dashboard + Force unlock (checked on every officer page load). Role is not stored in Cognito.
 
@@ -163,7 +163,7 @@ The web app keeps its **own** `/signup`, `/login` and `/forgot-password` pages a
 | Sign up (cyclists only) | `sign_up(ClientId, Username=id, Password, UserAttributes=[email])` → `admin_confirm_sign_up(UserPoolId, Username)` → `admin_update_user_attributes(UserPoolId, Username, [email_verified = "true"])` → put `sbp-users` item (`id`, `name`, `email`, `role = cyclist`). One step for the user, no email sent |
 | Log in (both roles) | `initiate_auth(ClientId, AuthFlow="USER_PASSWORD_AUTH", AuthParameters={USERNAME, PASSWORD})`; success → read `sbp-users` item → store `username`, `role` in the signed session cookie |
 | Wrong username or password | `NotAuthorizedException` (same error for both) |
-| Forgot password (both roles) | page 1: `forgot_password(ClientId, Username)` → Cognito emails a 6-digit code. Page 2: `confirm_forgot_password(ClientId, Username, ConfirmationCode, Password)` → back to login. Errors: `CodeMismatchException`, `ExpiredCodeException`, `LimitExceededException` |
+| Forgot password (both roles; **not built in the PoC**) | page 1: `forgot_password(ClientId, Username)` → Cognito emails a 6-digit code. Page 2: `confirm_forgot_password(ClientId, Username, ConfirmationCode, Password)` → back to login. Errors: `CodeMismatchException`, `ExpiredCodeException`, `LimitExceededException` |
 | Officer account | starting-data script: `admin_create_user` (`MessageAction="SUPPRESS"`, attributes `email` + `email_verified = "true"`) + `admin_set_user_password(Permanent=True)`, then `sbp-users` item with `role = officer` |
 | Fallback reset (no email access, lost phone) | officer verifies the person, then `admin_set_user_password` (AWS console: Cognito → user → Reset password also works) |
 
@@ -207,6 +207,7 @@ Key: `id` (S, UUID). Console Scans (small) and sorts by `detected_time`, newest 
 Loaded by **`webapp/load_starting_data.py`** (not Terraform). It only **creates rows that don't exist yet** and **never overwrites** an existing row (conditional put: `attribute_not_exists`), so it is safe to re-run against live data.
 - One `sbp-spaces` item per space (`id`, `address`, `lat`, `lng`).
 - One `sbp-lots` item per real lot (`status = free`, `bike_present = false`). Prototype: `space1`, 1 lot (`space1#lot1`).
+- **Simulated stations** (`space2`–`space4`, 20 lots each, no hardware): their lots, open sessions for the occupied lots (`user_id = demo`, fixed session ids, parked 45 min to 38 days ago) and a `demo` `sbp-users` row (no Cognito login). Defined in `webapp/starting_data.py`.
 - One officer account: Cognito user (`admin_create_user` + `admin_set_user_password`) + `sbp-users` item (`role = officer`). Skipped if it already exists.
 
 **[?]** Real address and coordinates for `space1`.
